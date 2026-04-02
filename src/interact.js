@@ -54,22 +54,24 @@ function uncollect() {
 
 // 获取当前笔记信息
 function getNoteInfo() {
-  const titleEl = document.querySelector('#detail-title, .title');
-  const authorEl = document.querySelector('.author-wrapper .username, [class*="author"]');
-  const likeCount = document.querySelector('.like-wrapper')?.textContent?.trim();
-  const collectCount = document.querySelector('.collect-wrapper')?.textContent?.trim();
-  const chatCount = document.querySelector('.chat-wrapper')?.textContent?.trim();
+  const noteContent = document.querySelector('.note-content');
+  const title = noteContent?.querySelector('.title')?.textContent?.trim();
+  const desc = noteContent?.querySelector('.desc, .note-text')?.textContent?.trim();
+  
+  const author = document.querySelector('.author-wrapper .username, [class*="author-name"]')?.textContent?.trim();
   
   const likeBtn = document.querySelector('.like-wrapper');
   const collectBtn = document.querySelector('.collect-wrapper');
+  const chatBtn = document.querySelector('.chat-wrapper');
   
   return {
-    title: titleEl?.textContent?.trim() || '未知',
-    author: authorEl?.textContent?.trim() || '未知',
+    title: title || '未找到标题',
+    content: desc || '未找到正文',
+    author: author || '未找到作者',
     stats: {
-      likes: likeCount || '0',
-      collects: collectCount || '0',
-      comments: chatCount || '0'
+      likes: likeBtn?.textContent?.trim() || '0',
+      collects: collectBtn?.textContent?.trim() || '0',
+      comments: chatBtn?.textContent?.trim() || '0'
     },
     status: {
       liked: likeBtn?.classList.contains('like-active') || false,
