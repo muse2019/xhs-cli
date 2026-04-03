@@ -7,13 +7,39 @@
 (function() {
   'use strict';
 
-  // 防止重复注入
-  if (window.__xhs_stealth__) return;
+  // ========== 隐蔽的重复注入检测 ==========
+  // 使用不可枚举的 Symbol 作为标记，比普通属性更难检测
+  const stealthKey = Symbol.for('_s' + Math.random().toString(36).slice(2, 8));
+
+  // 检查是否已注入（通过闭包变量，不暴露到 window）
+  const hasInjected = (() => {
+    try {
+      // 尝试从 document 读取隐藏标记
+      const marker = document.currentScript?.getAttribute('data-' + stealthKey.toString().slice(1, 8));
+      if (marker) return true;
+
+      // 备用检测：检查特定原型修改
+      const testProp = '_st' + Date.now().toString(36);
+      const descriptor = Object.getOwnPropertyDescriptor(EventTarget.prototype, testProp);
+      if (descriptor) return true;
+
+      return false;
+    } catch {
+      return false;
+    }
+  })();
+
+  if (hasInjected) return;
+
+  // 设置隐藏标记（使用多个隐蔽位置）
   try {
-    Object.defineProperty(window, '__xhs_stealth__', {
+    // 方法1：在原型上设置不可枚举标记
+    const markerProp = '_st' + Math.random().toString(36).slice(2, 6);
+    Object.defineProperty(EventTarget.prototype, markerProp, {
       value: true,
       enumerable: false,
-      configurable: true
+      configurable: true,
+      writable: false
     });
   } catch {}
 

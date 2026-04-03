@@ -212,7 +212,31 @@
   // ==================== 点击模拟 ====================
 
   /**
-   * 模拟真人点击
+   * 创建 PointerEvent 事件参数
+   */
+  function createPointerEventInit(type, x, y, isPrimary = true) {
+    return {
+      bubbles: true,
+      cancelable: true,
+      pointerId: isPrimary ? 1 : Math.floor(Math.random() * 1000),
+      pointerType: 'mouse',
+      isPrimary,
+      clientX: x,
+      clientY: y,
+      button: type.includes('down') || type.includes('up') ? 0 : -1,
+      buttons: type.includes('down') ? 1 : 0,
+      pressure: type.includes('down') ? 0.5 : 0,
+      tiltX: 0,
+      tiltY: 0,
+      twist: 0,
+      tangentialPressure: 0,
+      width: 1,
+      height: 1,
+    };
+  }
+
+  /**
+   * 模拟真人点击（包含 PointerEvent）
    */
   async function humanClick(x, y, options = {}) {
     const { doubleClick = false, moveFirst = true } = options;
@@ -237,57 +261,59 @@
       return { success: false, error: 'No element at position' };
     }
 
-    // mousedown
-    const downEvent = new MouseEvent('mousedown', {
+    // pointerover -> pointerenter -> mouseover -> mouseenter
+    element.dispatchEvent(new PointerEvent('pointerover', createPointerEventInit('over', clickedPos.x, clickedPos.y)));
+    element.dispatchEvent(new PointerEvent('pointerenter', createPointerEventInit('enter', clickedPos.x, clickedPos.y)));
+    element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, clientX: clickedPos.x, clientY: clickedPos.y }));
+    element.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false, cancelable: false, clientX: clickedPos.x, clientY: clickedPos.y }));
+
+    await sleep(random(20, 60));
+
+    // pointerdown -> mousedown
+    element.dispatchEvent(new PointerEvent('pointerdown', createPointerEventInit('down', clickedPos.x, clickedPos.y)));
+    element.dispatchEvent(new MouseEvent('mousedown', {
       bubbles: true,
       cancelable: true,
       clientX: clickedPos.x,
       clientY: clickedPos.y,
       button: 0,
-    });
-    element.dispatchEvent(downEvent);
+    }));
 
     // 按下延迟（真实按压时间）
     await sleep(random(50, 120));
 
-    // mouseup
-    const upEvent = new MouseEvent('mouseup', {
+    // pointerup -> mouseup -> click
+    element.dispatchEvent(new PointerEvent('pointerup', createPointerEventInit('up', clickedPos.x, clickedPos.y)));
+    element.dispatchEvent(new MouseEvent('mouseup', {
       bubbles: true,
       cancelable: true,
       clientX: clickedPos.x,
       clientY: clickedPos.y,
       button: 0,
-    });
-    element.dispatchEvent(upEvent);
-
-    // click
-    const clickEvent = new MouseEvent('click', {
+    }));
+    element.dispatchEvent(new PointerEvent('click', createPointerEventInit('click', clickedPos.x, clickedPos.y)));
+    element.dispatchEvent(new MouseEvent('click', {
       bubbles: true,
       cancelable: true,
       clientX: clickedPos.x,
       clientY: clickedPos.y,
       button: 0,
-    });
-    element.dispatchEvent(clickEvent);
+    }));
 
     // 双击
     if (doubleClick) {
       await sleep(random(80, 200));
 
       const doublePos = addJitter(clickedPos.x, clickedPos.y, 3);
-      element.dispatchEvent(new MouseEvent('mousedown', {
-        bubbles: true, cancelable: true, clientX: doublePos.x, clientY: doublePos.y, button: 0,
-      }));
+      element.dispatchEvent(new PointerEvent('pointerdown', createPointerEventInit('down', doublePos.x, doublePos.y)));
+      element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: doublePos.x, clientY: doublePos.y, button: 0 }));
       await sleep(random(50, 100));
-      element.dispatchEvent(new MouseEvent('mouseup', {
-        bubbles: true, cancelable: true, clientX: doublePos.x, clientY: doublePos.y, button: 0,
-      }));
-      element.dispatchEvent(new MouseEvent('click', {
-        bubbles: true, cancelable: true, clientX: doublePos.x, clientY: doublePos.y, button: 0,
-      }));
-      element.dispatchEvent(new MouseEvent('dblclick', {
-        bubbles: true, cancelable: true, clientX: doublePos.x, clientY: doublePos.y,
-      }));
+      element.dispatchEvent(new PointerEvent('pointerup', createPointerEventInit('up', doublePos.x, doublePos.y)));
+      element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: doublePos.x, clientY: doublePos.y, button: 0 }));
+      element.dispatchEvent(new PointerEvent('click', createPointerEventInit('click', doublePos.x, doublePos.y)));
+      element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: doublePos.x, clientY: doublePos.y, button: 0 }));
+      element.dispatchEvent(new PointerEvent('dblclick', createPointerEventInit('dblclick', doublePos.x, doublePos.y)));
+      element.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: doublePos.x, clientY: doublePos.y }));
     }
 
     // 点击后延迟

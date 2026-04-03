@@ -9,42 +9,67 @@ let useCdpInput = true;  // 使用 CDP 生成可信事件
 // ==================== CDP 输入事件 ====================
 
 /**
+ * 添加小数坐标，模拟真实鼠标位置
+ */
+function addFloatJitter(value, maxJitter = 0.5) {
+  // 添加小数部分（真实鼠标坐标通常有小数）
+  const decimal = Math.random() * 0.99 + 0.01;  // 0.01 - 0.99
+  const jitter = (Math.random() - 0.5) * maxJitter;
+  return value + decimal + jitter;
+}
+
+/**
  * 使用 CDP Input.dispatchMouseEvent 生成可信事件
  * 注意：使用 chrome.debugger 会在浏览器顶部显示警告条
  */
 async function cdpMouseMove(tabId, x, y) {
+  // 添加小数坐标
+  const floatX = addFloatJitter(x);
+  const floatY = addFloatJitter(y);
+
   await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', {
     type: 'mouseMoved',
-    x,
-    y,
+    x: floatX,
+    y: floatY,
   });
 }
 
 async function cdpMouseDown(tabId, x, y, button = 'left') {
+  const floatX = addFloatJitter(x);
+  const floatY = addFloatJitter(y);
+
   await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', {
     type: 'mousePressed',
-    x,
-    y,
+    x: floatX,
+    y: floatY,
     button,
     clickCount: 1,
   });
 }
 
 async function cdpMouseUp(tabId, x, y, button = 'left') {
+  const floatX = addFloatJitter(x);
+  const floatY = addFloatJitter(y);
+
   await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', {
     type: 'mouseReleased',
-    x,
-    y,
+    x: floatX,
+    y: floatY,
     button,
     clickCount: 1,
   });
 }
 
 async function cdpClick(tabId, x, y) {
+  // 移动到目标位置
   await cdpMouseMove(tabId, x, y);
   await new Promise(r => setTimeout(r, 50 + Math.random() * 50));
+
+  // 按下（坐标可能有微小变化）
   await cdpMouseDown(tabId, x, y);
   await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+
+  // 释放（坐标可能有微小变化）
   await cdpMouseUp(tabId, x, y);
 }
 
@@ -658,7 +683,33 @@ async function executeCommand(cmd) {
   }
 }
 
-// 初始化
+// ==================== 随机间隔定时器 ====================
+
+/**
+ * 随机间隔执行函数，避免固定频率被检测
+ */
+function setRandomInterval(fn, minMs, maxMs) {
+  let timeoutId = null;
+
+  const run = async () => {
+    await fn();
+    // 随机下一次执行时间
+    const nextDelay = minMs + Math.random() * (maxMs - minMs);
+    timeoutId = setTimeout(run, nextDelay);
+  };
+
+  // 首次执行也随机延迟
+  const initialDelay = Math.random() * minMs;
+  timeoutId = setTimeout(run, initialDelay);
+
+  // 返回清除函数
+  return () => {
+    if (timeoutId) clearTimeout(timeoutId);
+  };
+}
+
+// ==================== 初始化 ====================
+
 chrome.runtime.onInstalled.addListener(() => {
   console.log('[XHS Bridge] Installed');
   connectDaemon();
@@ -669,7 +720,7 @@ chrome.runtime.onStartup.addListener(() => {
   connectDaemon();
 });
 
-// 启动连接和定时任务
+// 启动连接和定时任务（使用随机间隔）
 connectDaemon();
-setInterval(heartbeat, 3000);
-setInterval(pollCommands, 100);  // 更快的轮询
+setRandomInterval(heartbeat, 2500, 4000);      // 心跳: 2.5-4 秒
+setRandomInterval(pollCommands, 80, 150);  // 轮询: 80-150ms
