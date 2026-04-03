@@ -303,13 +303,15 @@ async function executeCommand(cmd) {
       case 'navigate': {
         console.log('[XHS Bridge] Navigating to:', cmd.url);
 
+        let createdTab = null;
+
         // 如果已有活动标签页，在其中导航
         if (activeTabId && !cmd.newTab) {
           await chrome.tabs.update(activeTabId, { url: cmd.url });
         } else {
           // 创建新标签页
-          const tab = await chrome.tabs.create({ url: cmd.url });
-          activeTabId = tab.id;
+          createdTab = await chrome.tabs.create({ url: cmd.url });
+          activeTabId = createdTab.id;
         }
         console.log('[XHS Bridge] Tab:', activeTabId);
 
@@ -332,12 +334,19 @@ async function executeCommand(cmd) {
           chrome.tabs.onUpdated.addListener(listener);
         });
 
-        // 获取实际的 URL（可能被重定向）
+        // 获取实际的 URL
         let actualUrl = cmd.url;
         try {
           const tab = await chrome.tabs.get(activeTabId);
           actualUrl = tab.url || cmd.url;
-        } catch {}
+          console.log('[XHS Bridge] Actual URL:', actualUrl);
+        } catch (e) {
+          console.log('[XHS Bridge] Failed to get URL:', e.message);
+          // 如果创建标签页时有 URL，使用那个
+          if (createdTab && createdTab.url) {
+            actualUrl = createdTab.url;
+          }
+        }
 
         return { success: true, tabId: activeTabId, url: actualUrl };
       }
