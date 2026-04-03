@@ -1,5 +1,4 @@
 // XHS CLI Bridge - Background Script
-console.log('[XHS Bridge] Service Worker started');
 
 const DAEMON_PORT = 19826;
 let connected = false;
@@ -60,7 +59,6 @@ let cdpConfig = {
  */
 function setCdpMode(enabled) {
   cdpConfig.enabled = enabled;
-  console.log('[XHS Bridge] CDP mode:', enabled ? 'enabled' : 'disabled');
 
   // 如果禁用，分离所有已附加的 debugger
   if (!enabled) {
@@ -93,11 +91,9 @@ async function ensureDebuggerAttached(tabId) {
   try {
     await chrome.debugger.attach({ tabId }, '1.3');
     cdpConfig.attachedTabs.add(tabId);
-    console.log('[XHS Bridge] Debugger attached to tab:', tabId);
     return true;
   } catch (e) {
     if (!e.message.includes('already attached')) {
-      console.log('[XHS Bridge] Debugger attach failed:', e.message);
       return false;
     }
     cdpConfig.attachedTabs.add(tabId);
@@ -120,7 +116,6 @@ chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId) {
     cdpConfig.attachedTabs.delete(source.tabId);
   }
-  console.log('[XHS Bridge] Debugger detached:', reason);
 });
 
 /**
@@ -223,31 +218,6 @@ async function cdpType(tabId, text) {
   }
 }
 
-// 确保 debugger 已附加
-async function ensureDebuggerAttached(tabId) {
-  try {
-    await chrome.debugger.attach({ tabId }, '1.3');
-    console.log('[XHS Bridge] Debugger attached to tab:', tabId);
-  } catch (e) {
-    // 可能已经附加
-    if (!e.message.includes('already attached')) {
-      throw e;
-    }
-  }
-}
-
-// 分离 debugger
-async function detachDebugger(tabId) {
-  try {
-    await chrome.debugger.detach({ tabId });
-  } catch {}
-}
-
-// 监听 debugger 分离事件
-chrome.debugger.onDetach.addListener((source, reason) => {
-  console.log('[XHS Bridge] Debugger detached:', source, reason);
-});
-
 // 连接 Daemon
 async function connectDaemon() {
   if (connected) return true;
@@ -260,11 +230,9 @@ async function connectDaemon() {
     });
     if (response.ok) {
       connected = true;
-      console.log('[XHS Bridge] Connected to daemon');
       return true;
     }
   } catch (e) {
-    console.log('[XHS Bridge] Connection failed:', e.message);
   }
   return false;
 }
@@ -284,7 +252,6 @@ async function heartbeat() {
       body: JSON.stringify({ timestamp: Date.now() }),
     });
   } catch (e) {
-    console.log('[XHS Bridge] Heartbeat failed:', e.message);
     connected = false;
   }
 }
@@ -312,12 +279,10 @@ async function pollCommands() {
           continue;
         }
 
-        console.log('[XHS Bridge] Executing command:', cmd.action, cmd.id);
         executingCommandId = cmd.id;
 
         try {
           const result = await executeCommand(cmd);
-          console.log('[XHS Bridge] Result:', result);
           lastCommandId = cmd.id;
 
           // 返回结果
@@ -332,18 +297,15 @@ async function pollCommands() {
       }
     }
   } catch (e) {
-    console.log('[XHS Bridge] Poll failed:', e.message);
   }
 }
 
 // 执行命令
 async function executeCommand(cmd) {
-  console.log('[XHS Bridge] executeCommand:', cmd.action, cmd);
 
   try {
     switch (cmd.action) {
       case 'navigate': {
-        console.log('[XHS Bridge] Navigating to:', cmd.url);
 
         let createdTab = null;
 
@@ -354,7 +316,6 @@ async function executeCommand(cmd) {
             await chrome.tabs.get(activeTabId);
             tabExists = true;
           } catch {
-            console.log('[XHS Bridge] Tab', activeTabId, 'no longer exists, creating new tab');
             activeTabId = null;
           }
         }
@@ -367,13 +328,11 @@ async function executeCommand(cmd) {
           createdTab = await chrome.tabs.create({ url: cmd.url });
           activeTabId = createdTab.id;
         }
-        console.log('[XHS Bridge] Tab:', activeTabId);
 
         // 等待加载完成（最多10秒）
         await new Promise(resolve => {
           const timeout = setTimeout(() => {
             chrome.tabs.onUpdated.removeListener(listener);
-            console.log('[XHS Bridge] Navigate timeout, continuing...');
             resolve(undefined);
           }, 10000);
 
@@ -381,7 +340,6 @@ async function executeCommand(cmd) {
             if (tabId === activeTabId && info.status === 'complete') {
               clearTimeout(timeout);
               chrome.tabs.onUpdated.removeListener(listener);
-              console.log('[XHS Bridge] Tab loaded');
               resolve(undefined);
             }
           };
@@ -393,9 +351,7 @@ async function executeCommand(cmd) {
         try {
           const tab = await chrome.tabs.get(activeTabId);
           actualUrl = tab.url || cmd.url;
-          console.log('[XHS Bridge] Actual URL:', actualUrl);
         } catch (e) {
-          console.log('[XHS Bridge] Failed to get URL:', e.message);
           // 如果创建标签页时有 URL，使用那个
           if (createdTab && createdTab.url) {
             actualUrl = createdTab.url;
@@ -427,7 +383,6 @@ async function executeCommand(cmd) {
         }
         if (!tabId) return { success: false, error: 'No active tab' };
 
-        console.log('[XHS Bridge] exec: using MAIN world for tab', tabId);
 
         // 使用 chrome.scripting.executeScript 的 world: 'MAIN' 直接在页面执行
         // 这可以绑过 CSP 限制
@@ -467,10 +422,8 @@ async function executeCommand(cmd) {
           });
 
           const response = results[0]?.result;
-          console.log('[XHS Bridge] exec: got result', response);
           return { success: response?.success, result: response?.data, error: response?.error };
         } catch (e) {
-          console.log('[XHS Bridge] exec: error', e.message);
           return { success: false, error: e.message };
         }
       }
@@ -766,7 +719,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'keepalive') {
     // 每次唤醒时主动检查并重连
     if (!connected) {
-      console.log('[XHS Bridge] Alarm triggered, reconnecting...');
       await connectDaemon();
     }
     // 确保轮询继续运行
@@ -776,51 +728,61 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 // 监听 Service Worker 启动
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('[XHS Bridge] Installed');
   connected = false; // 重置连接状态
   connectDaemon();
   startAlarms();
-  startPolling();
+  startRandomPolling();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  console.log('[XHS Bridge] Startup');
   connected = false; // 重置连接状态
   connectDaemon();
   startAlarms();
-  startPolling();
+  startRandomPolling();
 });
 
 // 标记轮询是否已启动
 let pollingStarted = false;
 
-// 启动轮询
-function startPolling() {
+// 随机间隔轮询（避免固定频率被检测）
+function startRandomPolling() {
   if (pollingStarted) return;
   pollingStarted = true;
+
+  const scheduleNextPoll = () => {
+    // 随机间隔 80-200ms（平均 ~140ms，略高于原来的 100ms）
+    const delay = 80 + Math.random() * 120;
+    setTimeout(async () => {
+      if (!connected) {
+        await connectDaemon();
+      }
+      await pollCommands();
+      scheduleNextPoll();
+    }, delay);
+  };
+
+  const scheduleNextHeartbeat = () => {
+    // 随机间隔 2500-4000ms（平均 ~3s）
+    const delay = 2500 + Math.random() * 1500;
+    setTimeout(async () => {
+      if (!connected) {
+        await connectDaemon();
+      }
+      await heartbeat();
+      scheduleNextHeartbeat();
+    }, delay);
+  };
 
   // 立即开始一次
   pollCommands();
   heartbeat();
 
-  // 使用 setInterval（会被 Service Worker 休眠暂停，但闹钟会唤醒）
-  setInterval(async () => {
-    // 每次轮询前检查连接
-    if (!connected) {
-      await connectDaemon();
-    }
-    await pollCommands();
-  }, 100);
-
-  setInterval(async () => {
-    if (!connected) {
-      await connectDaemon();
-    }
-    await heartbeat();
-  }, 3000);
+  // 启动随机间隔轮询
+  scheduleNextPoll();
+  scheduleNextHeartbeat();
 }
 
 // 初始化
 connectDaemon();
 startAlarms();
-startPolling();
+startRandomPolling();

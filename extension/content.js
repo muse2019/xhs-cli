@@ -16,6 +16,7 @@
     scrollSpeed: 300,       // 滚动基础速度 (px/次)
     randomness: 0.3,        // 随机程度 (0-1)
     behaviorNoise: true,    // 行为噪声（防止机器学习检测）
+    highFreqJitter: true,   // 高频抖动（模拟手部微颤）
   };
 
   // ==================== 隐蔽状态存储 ====================
@@ -68,20 +69,26 @@
 
     /**
      * 计算自适应延迟
-     * 根据会话时长和操作频率调整延迟
+     * 根据会话时长和操作频率调整延迟（动态阈值）
      */
     getAdaptiveDelay(baseMs) {
       const sessionDuration = Date.now() - _state.sessionStart;
       const actionsPerMinute = _state.actionCount / (sessionDuration / 60000);
 
+      // 动态阈值：根据时间段变化
+      // 模拟真人：刚开始快，之后变慢，偶尔又快一点
+      const hour = new Date().getHours();
+      const timeFactor = hour >= 9 && hour <= 18 ? 1.0 : 1.3; // 工作时间稍快
+      const baseThreshold = 25 + Math.random() * 15; // 动态阈值 25-40
+
       // 如果操作太频繁，增加延迟
       let multiplier = 1;
-      if (actionsPerMinute > 30) {
-        multiplier = 1 + (actionsPerMinute - 30) * 0.02;
+      if (actionsPerMinute > baseThreshold) {
+        multiplier = 1 + (actionsPerMinute - baseThreshold) * 0.02 * timeFactor;
       }
 
-      // 随机变化
-      const noise = 1 + (Math.random() - 0.5) * 0.4;
+      // 随机变化（范围更大）
+      const noise = 1 + (Math.random() - 0.5) * 0.6;
 
       return baseMs * multiplier * noise;
     },
@@ -196,6 +203,15 @@
         if (isErratic && Math.random() < 0.3) {
           x += random(-8, 8);
           y += random(-8, 8);
+        }
+
+        // 高频微颤（模拟手部自然抖动）
+        if (CONFIG.highFreqJitter) {
+          // 频率约 8-12Hz，振幅 0.5-2px
+          const microJitter = Math.sin(i * 0.8 + Math.random()) * random(0.5, 2);
+          const microJitterY = Math.cos(i * 0.6 + Math.random()) * random(0.5, 2);
+          x += microJitter;
+          y += microJitterY;
         }
       }
 
@@ -884,7 +900,6 @@
    * 使用 DOM 属性传递结果，避免 postMessage 问题
    */
   function execCode(code) {
-    console.log('[XHS Content] execCode called with:', code?.slice(0, 50));
     return new Promise((resolve) => {
       const requestId = 'xhs_exec_' + Date.now() + '_' + Math.random().toString(36).slice(2);
       const attrName = 'data-' + requestId;
@@ -894,7 +909,6 @@
       // 注意：把 safeStringify 内联到注入的脚本中
       script.textContent = `
         (function() {
-          console.log('[XHS Injected] Script executing');
           function safeStringify(obj) {
             try {
               return JSON.stringify(obj, (key, value) => {
@@ -908,18 +922,14 @@
           }
           try {
             const result = ${code};
-            console.log('[XHS Injected] Result:', typeof result);
             document.documentElement.setAttribute('${attrName}', safeStringify({ success: true, data: result }));
-            console.log('[XHS Injected] Attribute set');
           } catch(e) {
-            console.log('[XHS Injected] Error:', e.message);
             document.documentElement.setAttribute('${attrName}', safeStringify({ success: false, error: e.message }));
           }
         })();
       `;
       document.documentElement.appendChild(script);
       script.remove();
-      console.log('[XHS Content] Script injected, waiting for result...');
 
       // 轮询检查结果
       let attempts = 0;
@@ -928,7 +938,6 @@
         attempts++;
         const attrValue = document.documentElement.getAttribute(attrName);
         if (attrValue !== null) {
-          console.log('[XHS Content] Got result after', attempts, 'attempts');
           document.documentElement.removeAttribute(attrName);
           try {
             const parsed = JSON.parse(attrValue);
@@ -939,7 +948,6 @@
         } else if (attempts < maxAttempts) {
           setTimeout(checkResult, 100);
         } else {
-          console.log('[XHS Content] Timeout after', attempts, 'attempts');
           resolve({ success: false, error: 'Timeout after ' + attempts + ' attempts' });
         }
       };
@@ -951,7 +959,6 @@
 
   // 监听来自 background 的消息
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log('[XHS Content] Received message:', message.action);
 
     // 异步处理
     (async () => {
@@ -996,9 +1003,7 @@
             break;
 
           case 'execCode':
-            console.log('[XHS Content] execCode action received');
             result = await execCode(message.code);
-            console.log('[XHS Content] execCode result:', result);
             break;
 
           default:
@@ -1016,6 +1021,5 @@
   });
 
   // 初始化完成（不再使用全局变量）
-  console.log('[XHS Content] Loaded with human behavior simulation');
 
 })();
