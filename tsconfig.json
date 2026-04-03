@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "resolveJsonModule": true,
+    "noImplicitAny": false
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "src/browser/page.ts", "src/stealth/human-behavior.ts", "src/stealth/mouse-trajectory.ts", "src/stealth/random-delay.ts", "src/stealth/stealth-script.ts", "src/stealth/index.ts", "src/adapters/xiaohongshu.ts", "src/browser/index.ts"]
+}

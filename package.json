@@ -1,20 +1,28 @@
 {
   "name": "xiaohongshu-cli",
-  "version": "1.0.0",
-  "description": "小红书命令行工具 - 点赞/收藏/发布/数据分析",
+  "version": "2.0.0",
+  "description": "小红书命令行工具 - 复用已登录 Chrome，无需重新登录",
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/index.js",
   "bin": {
-    "xhs": "./src/index.js"
+    "xhs": "./dist/index.js"
   },
   "scripts": {
-    "start": "node src/index.js"
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "daemon": "node dist/daemon/index.js"
   },
-  "keywords": ["xiaohongshu", "cli", "automation"],
+  "keywords": ["xiaohongshu", "cli", "automation", "chrome-extension"],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "playwright": "^1.40.0",
-    "commander": "^11.0.0"
+    "commander": "^11.0.0",
+    "chalk": "^5.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "tsx": "^4.7.0"
   }
 }
