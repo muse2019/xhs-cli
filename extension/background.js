@@ -637,17 +637,69 @@ function setRandomInterval(fn, minMs, maxMs) {
 
 // ==================== 初始化 ====================
 
+// MV3 Service Worker 会在空闲时休眠（约 30 秒无活动）
+// 休眠时 setTimeout/setInterval 会被暂停
+// 解决方案：使用 chrome.alarms + 在每次唤醒时主动重连
+
+// 创建闹钟保持 Service Worker 活跃
+// chrome.alarms 最小间隔是 1 分钟
+async function startAlarms() {
+  try {
+    await chrome.alarms.create('keepalive', { periodInMinutes: 0.5 }); // 30 秒
+  } catch {}
+}
+
+// 监听闹钟 - 保持活跃并检查连接
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === 'keepalive') {
+    // 每次唤醒时主动检查并重连
+    if (!connected) {
+      console.log('[XHS Bridge] Alarm triggered, reconnecting...');
+      await connectDaemon();
+    }
+  }
+});
+
+// 监听 Service Worker 启动
 chrome.runtime.onInstalled.addListener(() => {
   console.log('[XHS Bridge] Installed');
+  connected = false; // 重置连接状态
   connectDaemon();
+  startAlarms();
+  startPolling();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   console.log('[XHS Bridge] Startup');
+  connected = false; // 重置连接状态
   connectDaemon();
+  startAlarms();
+  startPolling();
 });
 
-// 启动连接和定时任务（使用随机间隔）
+// 启动轮询
+function startPolling() {
+  // 立即开始一次
+  pollCommands();
+
+  // 使用 setInterval（会被 Service Worker 休眠暂停，但闹钟会唤醒）
+  setInterval(async () => {
+    // 每次轮询前检查连接
+    if (!connected) {
+      await connectDaemon();
+    }
+    await pollCommands();
+  }, 100);
+
+  setInterval(async () => {
+    if (!connected) {
+      await connectDaemon();
+    }
+    await heartbeat();
+  }, 3000);
+}
+
+// 初始化
 connectDaemon();
-setRandomInterval(heartbeat, 2500, 4000);      // 心跳: 2.5-4 秒
-setRandomInterval(pollCommands, 80, 150);  // 轮询: 80-150ms
+startAlarms();
+startPolling();
