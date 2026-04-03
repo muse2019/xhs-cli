@@ -860,6 +860,93 @@
     }
   }
 
+  // ==================== 代码执行（绑过 CSP）====================
+
+  /**
+   * 安全序列化，处理 Set/Map/循环引用
+   */
+  function safeStringify(obj) {
+    try {
+      return JSON.stringify(obj, (key, value) => {
+        if (value instanceof Set) return Array.from(value);
+        if (value instanceof Map) return Object.fromEntries(value);
+        if (typeof value === 'function') return value.toString();
+        return value;
+      });
+    } catch (e) {
+      return JSON.stringify({ error: 'Cannot serialize result: ' + e.message });
+    }
+  }
+
+  /**
+   * 在页面上下文中执行 JavaScript 代码
+   * 通过创建 script 元素注入，绑过 CSP 限制
+   * 使用 DOM 属性传递结果，避免 postMessage 问题
+   */
+  function execCode(code) {
+    console.log('[XHS Content] execCode called with:', code?.slice(0, 50));
+    return new Promise((resolve) => {
+      const requestId = 'xhs_exec_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+      const attrName = 'data-' + requestId;
+
+      // 创建 script 元素注入代码
+      const script = document.createElement('script');
+      // 注意：把 safeStringify 内联到注入的脚本中
+      script.textContent = `
+        (function() {
+          console.log('[XHS Injected] Script executing');
+          function safeStringify(obj) {
+            try {
+              return JSON.stringify(obj, (key, value) => {
+                if (value instanceof Set) return Array.from(value);
+                if (value instanceof Map) return Object.fromEntries(value);
+                return value;
+              });
+            } catch(e) {
+              return JSON.stringify({ error: 'Serialize error: ' + e.message });
+            }
+          }
+          try {
+            const result = ${code};
+            console.log('[XHS Injected] Result:', typeof result);
+            document.documentElement.setAttribute('${attrName}', safeStringify({ success: true, data: result }));
+            console.log('[XHS Injected] Attribute set');
+          } catch(e) {
+            console.log('[XHS Injected] Error:', e.message);
+            document.documentElement.setAttribute('${attrName}', safeStringify({ success: false, error: e.message }));
+          }
+        })();
+      `;
+      document.documentElement.appendChild(script);
+      script.remove();
+      console.log('[XHS Content] Script injected, waiting for result...');
+
+      // 轮询检查结果
+      let attempts = 0;
+      const maxAttempts = 50; // 5 秒
+      const checkResult = () => {
+        attempts++;
+        const attrValue = document.documentElement.getAttribute(attrName);
+        if (attrValue !== null) {
+          console.log('[XHS Content] Got result after', attempts, 'attempts');
+          document.documentElement.removeAttribute(attrName);
+          try {
+            const parsed = JSON.parse(attrValue);
+            resolve(parsed);
+          } catch (e) {
+            resolve({ success: false, error: 'Parse error: ' + e.message });
+          }
+        } else if (attempts < maxAttempts) {
+          setTimeout(checkResult, 100);
+        } else {
+          console.log('[XHS Content] Timeout after', attempts, 'attempts');
+          resolve({ success: false, error: 'Timeout after ' + attempts + ' attempts' });
+        }
+      };
+      setTimeout(checkResult, 50);
+    });
+  }
+
   // ==================== 消息监听 ====================
 
   // 监听来自 background 的消息
@@ -906,6 +993,12 @@
 
           case 'xhsBrowseNote':
             result = await xhsBrowseNote(message.durationMs);
+            break;
+
+          case 'execCode':
+            console.log('[XHS Content] execCode action received');
+            result = await execCode(message.code);
+            console.log('[XHS Content] execCode result:', result);
             break;
 
           default:

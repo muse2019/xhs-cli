@@ -131,7 +131,12 @@ export class BridgePage {
       })()
     `);
 
-    return result;
+    // 确保 result 是有效对象
+    if (result && typeof result === 'object' && 'url' in result) {
+      return result as { url: string; title: string; elements: ElementInfo[] };
+    }
+
+    return { url: '', title: '', elements: [] };
   }
 
   /**

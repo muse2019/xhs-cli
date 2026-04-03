@@ -290,7 +290,7 @@ xiaohongshu
     }
 
     const limit = parseInt(opts.limit, 10);
-    const results = await page.evaluate(`
+    const rawResults = await page.evaluate(`
       (() => {
         const notes = [];
 
@@ -352,7 +352,8 @@ xiaohongshu
       })()
     `);
 
-    const feed = (results as any[]).slice(0, limit);
+    // 确保结果是数组
+    const feed = Array.isArray(rawResults) ? rawResults.slice(0, limit) : [];
 
     if (opts.json) {
       console.log(JSON.stringify(feed, null, 2));
@@ -382,7 +383,7 @@ xiaohongshu
     await page.goto(`https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(keyword)}`);
     await page.wait(2);
 
-    const results = await page.evaluate(`
+    const rawResults = await page.evaluate(`
       (() => {
         const notes = [];
         document.querySelectorAll('a[href*="/explore/"]').forEach(el => {
@@ -399,8 +400,10 @@ xiaohongshu
       })()
     `);
 
-    console.log(chalk.bold(`\n搜索结果 (${(results as any[]).length} 条):\n`));
-    (results as any[]).slice(0, parseInt(opts.limit, 10)).forEach((item, i) => {
+    const results = Array.isArray(rawResults) ? rawResults : [];
+
+    console.log(chalk.bold(`\n搜索结果 (${results.length} 条):\n`));
+    results.slice(0, parseInt(opts.limit, 10)).forEach((item, i) => {
       console.log(`  [${i + 1}] ${chalk.cyan(item.id)} - ${item.title.slice(0, 40)}`);
     });
   });

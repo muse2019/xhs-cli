@@ -82,7 +82,17 @@ export async function navigate(url: string, tabId?: number): Promise<{ tabId: nu
  */
 export async function exec(code: string, tabId?: number): Promise<any> {
   const result = await sendCommand('exec', { code, tabId });
-  return result.result;
+  // 处理返回结果 { success, result, error }
+  if (result && typeof result === 'object') {
+    if (result.success && 'result' in result) {
+      return result.result;
+    }
+    if (!result.success && result.error) {
+      return { error: result.error };
+    }
+    return result.result ?? result;
+  }
+  return result;
 }
 
 /**

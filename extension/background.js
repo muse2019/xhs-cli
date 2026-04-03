@@ -5,6 +5,48 @@ const DAEMON_PORT = 19826;
 let connected = false;
 let activeTabId = null;
 
+// ==================== 获取活动标签页 ====================
+
+/**
+ * 获取当前活动标签页，如果没有缓存的 activeTabId 则查询当前窗口的活动标签页
+ */
+async function getActiveTab() {
+  // 如果有缓存的 activeTabId，检查它是否仍然有效
+  if (activeTabId) {
+    try {
+      const tab = await chrome.tabs.get(activeTabId);
+      if (tab) return tab;
+    } catch {
+      // 标签页已关闭
+      activeTabId = null;
+    }
+  }
+
+  // 查询当前窗口的活动标签页
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab) {
+    activeTabId = tab.id;
+  }
+  return tab;
+}
+
+/**
+ * 解析 tabId，如果未提供则获取当前活动标签页的 ID
+ */
+async function resolveTabId(cmdTabId) {
+  if (cmdTabId) return cmdTabId;
+  if (activeTabId) {
+    try {
+      await chrome.tabs.get(activeTabId);
+      return activeTabId;
+    } catch {
+      activeTabId = null;
+    }
+  }
+  const tab = await getActiveTab();
+  return tab?.id;
+}
+
 // ==================== CDP 配置 ====================
 // 混合模式：默认禁用 CDP 避免警告条，用户可按需开启
 let cdpConfig = {
@@ -377,18 +419,60 @@ async function executeCommand(cmd) {
       }
 
       case 'exec': {
-        const tabId = cmd.tabId || activeTabId;
+        // 使用传入的 tabId 或获取当前活动标签页
+        let tabId = cmd.tabId || activeTabId;
+        if (!tabId) {
+          const activeTab = await getActiveTab();
+          tabId = activeTab?.id;
+        }
         if (!tabId) return { success: false, error: 'No active tab' };
 
-        const results = await chrome.scripting.executeScript({
-          target: { tabId },
-          func: (code) => {
-            try { return eval(code); }
-            catch (e) { return { error: e.message }; }
-          },
-          args: [cmd.code],
-        });
-        return { success: true, result: results[0]?.result };
+        console.log('[XHS Bridge] exec: using MAIN world for tab', tabId);
+
+        // 使用 chrome.scripting.executeScript 的 world: 'MAIN' 直接在页面执行
+        // 这可以绑过 CSP 限制
+        try {
+          // 先生成一个唯一 ID 用于传递结果
+          const resultId = 'xhs_result_' + Date.now();
+
+          // 注入代码到页面主世界
+          await chrome.scripting.executeScript({
+            target: { tabId },
+            world: 'MAIN',
+            func: (code, resultId) => {
+              try {
+                const result = eval(code);
+                // 将结果存储到全局变量
+                window[resultId] = { success: true, data: result };
+              } catch (e) {
+                window[resultId] = { success: false, error: e.message };
+              }
+            },
+            args: [cmd.code, resultId],
+          });
+
+          // 等待一小段时间让代码执行完成
+          await new Promise(r => setTimeout(r, 50));
+
+          // 读取结果
+          const results = await chrome.scripting.executeScript({
+            target: { tabId },
+            world: 'MAIN',
+            func: (resultId) => {
+              const result = window[resultId];
+              delete window[resultId];
+              return result;
+            },
+            args: [resultId],
+          });
+
+          const response = results[0]?.result;
+          console.log('[XHS Bridge] exec: got result', response);
+          return { success: response?.success, result: response?.data, error: response?.error };
+        } catch (e) {
+          console.log('[XHS Bridge] exec: error', e.message);
+          return { success: false, error: e.message };
+        }
       }
 
       case 'cookies': {
@@ -417,7 +501,7 @@ async function executeCommand(cmd) {
       // ==================== 真人行为命令 ====================
 
       case 'humanClick': {
-        const tabId = cmd.tabId || activeTabId;
+        const tabId = await resolveTabId(cmd.tabId);
         if (!tabId) return { success: false, error: 'No active tab' };
 
         // 如果启用 CDP 且命令要求使用 CDP
@@ -439,7 +523,7 @@ async function executeCommand(cmd) {
       }
 
       case 'humanClickElement': {
-        const tabId = cmd.tabId || activeTabId;
+        const tabId = await resolveTabId(cmd.tabId);
         if (!tabId) return { success: false, error: 'No active tab' };
 
         // 先获取元素位置
@@ -480,7 +564,7 @@ async function executeCommand(cmd) {
       }
 
       case 'humanType': {
-        const tabId = cmd.tabId || activeTabId;
+        const tabId = await resolveTabId(cmd.tabId);
         if (!tabId) return { success: false, error: 'No active tab' };
 
         // 如果明确要求使用 CDP
@@ -521,7 +605,7 @@ async function executeCommand(cmd) {
       }
 
       case 'humanScroll': {
-        const tabId = cmd.tabId || activeTabId;
+        const tabId = await resolveTabId(cmd.tabId);
         if (!tabId) return { success: false, error: 'No active tab' };
 
         // 滚动通常不需要 isTrusted，直接用 content script
@@ -534,7 +618,7 @@ async function executeCommand(cmd) {
       }
 
       case 'randomScroll': {
-        const tabId = cmd.tabId || activeTabId;
+        const tabId = await resolveTabId(cmd.tabId);
         if (!tabId) return { success: false, error: 'No active tab' };
 
         // 滚动不需要 CDP
@@ -548,7 +632,7 @@ async function executeCommand(cmd) {
       // ==================== 小红书专用命令 ====================
 
       case 'xhsLike': {
-        const tabId = cmd.tabId || activeTabId;
+        const tabId = await resolveTabId(cmd.tabId);
         if (!tabId) return { success: false, error: 'No active tab' };
 
         // 获取点赞按钮位置
@@ -577,7 +661,7 @@ async function executeCommand(cmd) {
       }
 
       case 'xhsCollect': {
-        const tabId = cmd.tabId || activeTabId;
+        const tabId = await resolveTabId(cmd.tabId);
         if (!tabId) return { success: false, error: 'No active tab' };
 
         // 获取收藏按钮位置
@@ -606,7 +690,7 @@ async function executeCommand(cmd) {
       }
 
       case 'xhsComment': {
-        const tabId = cmd.tabId || activeTabId;
+        const tabId = await resolveTabId(cmd.tabId);
         if (!tabId) return { success: false, error: 'No active tab' };
 
         // 默认使用 content script
@@ -618,7 +702,7 @@ async function executeCommand(cmd) {
       }
 
       case 'xhsBrowseNote': {
-        const tabId = cmd.tabId || activeTabId;
+        const tabId = await resolveTabId(cmd.tabId);
         if (!tabId) return { success: false, error: 'No active tab' };
 
         // 滚动浏览不需要 CDP
