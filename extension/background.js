@@ -305,8 +305,20 @@ async function executeCommand(cmd) {
 
         let createdTab = null;
 
-        // 如果已有活动标签页，在其中导航
-        if (activeTabId && !cmd.newTab) {
+        // 检查 activeTabId 是否有效
+        let tabExists = false;
+        if (activeTabId) {
+          try {
+            await chrome.tabs.get(activeTabId);
+            tabExists = true;
+          } catch {
+            console.log('[XHS Bridge] Tab', activeTabId, 'no longer exists, creating new tab');
+            activeTabId = null;
+          }
+        }
+
+        // 如果有有效的活动标签页，在其中导航
+        if (tabExists && !cmd.newTab) {
           await chrome.tabs.update(activeTabId, { url: cmd.url });
         } else {
           // 创建新标签页
