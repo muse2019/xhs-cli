@@ -685,6 +685,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       console.log('[XHS Bridge] Alarm triggered, reconnecting...');
       await connectDaemon();
     }
+    // 确保轮询继续运行
+    pollCommands();
   }
 });
 
@@ -705,10 +707,17 @@ chrome.runtime.onStartup.addListener(() => {
   startPolling();
 });
 
+// 标记轮询是否已启动
+let pollingStarted = false;
+
 // 启动轮询
 function startPolling() {
+  if (pollingStarted) return;
+  pollingStarted = true;
+
   // 立即开始一次
   pollCommands();
+  heartbeat();
 
   // 使用 setInterval（会被 Service Worker 休眠暂停，但闹钟会唤醒）
   setInterval(async () => {

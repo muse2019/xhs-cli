@@ -272,6 +272,105 @@ const xiaohongshu = program
   .description('小红书专用命令');
 
 xiaohongshu
+  .command('feed')
+  .option('--limit <n>', '结果数量', '20')
+  .option('--json', '输出 JSON 格式')
+  .description('获取首页推荐 Feed 流')
+  .action(async (opts: { limit: string; json: boolean }) => {
+    const page = await getBridgePage();
+
+    console.log(chalk.dim('获取首页 Feed...'));
+    await page.goto('https://www.xiaohongshu.com/explore');
+    await page.wait(2);
+
+    // 滚动加载更多内容
+    for (let i = 0; i < 3; i++) {
+      await page.evaluate(`window.scrollBy(0, 500)`);
+      await page.wait(0.5);
+    }
+
+    const limit = parseInt(opts.limit, 10);
+    const results = await page.evaluate(`
+      (() => {
+        const notes = [];
+
+        // 首页 Feed 流的笔记卡片
+        document.querySelectorAll('a[href*="/explore/"]').forEach(el => {
+          const href = el.getAttribute('href') || '';
+          const match = href.match(/explore\\/([a-f0-9]+)/);
+          if (!match) return;
+
+          const card = el.closest('section') || el.closest('[class*="note-item"]') || el.parentElement?.parentElement;
+
+          // 获取标题
+          let title = '';
+          const titleEl = card?.querySelector('[class*="title"], [class*="name"]');
+          if (titleEl) {
+            title = titleEl.textContent?.trim() || '';
+          } else {
+            title = el.getAttribute('title') || el.textContent?.trim().slice(0, 50) || '';
+          }
+
+          // 获取作者
+          let author = '';
+          const authorEl = card?.querySelector('[class*="author"], [class*="name"]');
+          if (authorEl && authorEl !== titleEl) {
+            author = authorEl.textContent?.trim() || '';
+          }
+
+          // 获取封面图
+          let cover = '';
+          const img = card?.querySelector('img');
+          if (img) {
+            cover = img.src || '';
+          }
+
+          // 获取点赞数
+          let likes = '';
+          const likeEl = card?.querySelector('[class*="like"], [class*="count"]');
+          if (likeEl) {
+            likes = likeEl.textContent?.trim() || '';
+          }
+
+          notes.push({
+            id: match[1],
+            title: title.slice(0, 100),
+            author,
+            cover,
+            likes,
+            url: 'https://www.xiaohongshu.com/explore/' + match[1],
+          });
+        });
+
+        // 去重
+        const seen = new Set();
+        return notes.filter(n => {
+          if (seen.has(n.id)) return false;
+          seen.add(n.id);
+          return true;
+        });
+      })()
+    `);
+
+    const feed = (results as any[]).slice(0, limit);
+
+    if (opts.json) {
+      console.log(JSON.stringify(feed, null, 2));
+      return;
+    }
+
+    console.log(chalk.bold(`\n首页 Feed (${feed.length} 条):\n`));
+    feed.forEach((item, i) => {
+      console.log(`  [${i + 1}] ${chalk.cyan(item.id)}`);
+      console.log(`      ${chalk.dim(item.title.slice(0, 40))}`);
+      if (item.author) {
+        console.log(`      ${chalk.dim('@' + item.author)}`);
+      }
+      console.log();
+    });
+  });
+
+xiaohongshu
   .command('search')
   .argument('<keyword>', '搜索关键词')
   .option('--limit <n>', '结果数量', '20')
