@@ -138,8 +138,8 @@ operate
   .action(async (url: string) => {
     const page = await getBridgePage();
     console.log(chalk.dim(`导航到: ${url}`));
-    await page.goto(url);
-    console.log(chalk.green(`✓ 已打开: ${await page.getUrl()}`));
+    const actualUrl = await page.goto(url);
+    console.log(chalk.green(`✓ 已打开: ${actualUrl}`));
   });
 
 operate

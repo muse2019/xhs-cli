@@ -7,8 +7,10 @@
 ## 特性
 
 - ✅ **复用已登录 Chrome** - 无需重新登录
-- ✅ **真人行为模拟** - 贝塞尔曲线鼠标轨迹、随机延迟、打字模拟
-- ✅ **反检测** - 基础反检测注入
+- ✅ **真人行为模拟** - 贝塞尔曲线鼠标轨迹、随机延迟、打字模拟、失误纠正
+- ✅ **反检测** - 23 层保护，包括 WebRTC、Font、Canvas、Audio 指纹保护
+- ✅ **Touch 事件支持** - 支持移动端/响应式网站
+- ✅ **行为噪声** - 自适应延迟、随机微操作，防止机器学习检测
 
 ## 架构
 
@@ -87,6 +89,16 @@ xhs xiaohongshu browse 69a8423f000000002202cdee --duration 15000
 | `xhs daemon status` | 检查状态 |
 | `xhs daemon stop` | 停止 Daemon |
 
+### 配置管理
+
+| 命令 | 说明 |
+|------|------|
+| `xhs config cdp on` | 启用 CDP 模式（isTrusted=true 事件） |
+| `xhs config cdp off` | 禁用 CDP 模式（默认） |
+| `xhs config show` | 显示当前配置 |
+
+> **注意**: CDP 模式会生成可信事件 (`isTrusted=true`)，但浏览器顶部会显示调试警告条。
+
 ### 浏览器操作
 
 | 命令 | 说明 |
@@ -124,16 +136,47 @@ xhs xiaohongshu browse 69a8423f000000002202cdee --duration 15000
 
 ---
 
+## 反检测保护
+
+### 23 层保护机制
+
+| 层级 | 功能 |
+|------|------|
+| 1-14 | 基础保护（webdriver 伪装、CDP 痕迹清理等） |
+| 15 | Canvas 指纹噪声 |
+| 16 | Audio 指纹噪声 |
+| 17 | DevTools 检测防护 |
+| 18 | 时间戳指纹随机化 |
+| 19 | WebRTC IP 泄露保护 |
+| 20 | Font 指纹保护 |
+| 21 | 屏幕信息伪装 |
+| 22 | 硬件信息伪装 |
+| 23 | Touch 支持伪装 |
+
+### 指纹保护
+
+| 类型 | 说明 |
+|------|------|
+| **Canvas** | getImageData 添加微弱噪声 |
+| **Audio** | getFloatFrequencyData 随机化 |
+| **WebGL** | 统一显卡指纹 |
+| **Font** | 随机化字体测量结果 |
+| **Screen** | 伪装常见分辨率 |
+| **Hardware** | CPU 核心数、内存、电池状态 |
+
+---
+
 ## 真人行为模拟
 
 ### 实现位置
 
-真人行为模拟在 **Chrome Extension 端**（`extension/content.js`）实现：
+真人行为模拟在 **Chrome Extension 端**实现：
 
 ```
 extension/
 ├── manifest.json     # 扩展配置
 ├── background.js     # Service Worker
+├── stealth.js        # 反检测脚本
 └── content.js        # 真人行为模拟 ⭐
 ```
 
@@ -141,12 +184,21 @@ extension/
 
 | 功能 | 说明 |
 |------|------|
-| **鼠标轨迹** | 贝塞尔曲线 + 随机抖动 |
-| **点击模拟** | mousedown → mouseup → click 事件序列 |
-| **打字模拟** | keydown → keypress → input → keyup + 随机延迟 |
-| **滚动模拟** | 分段滚动 + 随机速度 |
+| **鼠标轨迹** | 贝塞尔曲线 + 随机抖动 + 失误纠正 |
+| **点击模拟** | PointerEvent + TouchEvent 完整事件序列 |
+| **打字模拟** | keydown → keypress → input → keyup + 随机延迟 + 打错字模拟 |
+| **滚动模拟** | 分段滚动 + 随机速度 + 偶尔回头 |
 | **思考时间** | 随机延迟模拟人类思考 |
 | **阅读时间** | 根据文字长度计算阅读时间 |
+| **行为噪声** | 自适应延迟、随机微操作 |
+
+### 行为噪声
+
+为防止机器学习检测操作模式，实现了以下噪声机制：
+
+- **自适应延迟**: 操作太频繁时自动增加延迟
+- **随机微操作**: 5% 概率在操作间插入无意义动作
+- **频率控制**: 每分钟操作超过 30 次时自动降速
 
 ### 鼠标轨迹算法
 
@@ -168,29 +220,6 @@ function generateBezierPoints(start, end, steps) {
 }
 ```
 
-### 打字模拟
-
-```javascript
-// 真人打字 - 每个字符都有随机延迟
-async function humanType(element, text) {
-  for (const char of text) {
-    element.dispatchEvent(new KeyboardEvent('keydown', { key: char }));
-    element.dispatchEvent(new KeyboardEvent('keypress', { key: char }));
-    element.value += char;
-    element.dispatchEvent(new Event('input'));
-    element.dispatchEvent(new KeyboardEvent('keyup', { key: char }));
-
-    // 随机延迟 50-150ms
-    await sleep(50 + Math.random() * 100);
-
-    // 5% 概率停顿更久（模拟思考）
-    if (Math.random() < 0.05) {
-      await sleep(200 + Math.random() * 300);
-    }
-  }
-}
-```
-
 ---
 
 ## 与 opencli 对比
@@ -203,7 +232,11 @@ async function humanType(element, text) {
 | 鼠标轨迹 | ❌ | ✅ 贝塞尔曲线 |
 | 随机延迟 | ❌ | ✅ |
 | 打字模拟 | ❌ | ✅ |
-| 反检测 | ✅ 13层 | ✅ 基础 |
+| Touch 事件 | ❌ | ✅ |
+| 反检测 | ✅ 13层 | ✅ 23层 |
+| WebRTC 保护 | ❌ | ✅ |
+| Font 指纹保护 | ❌ | ✅ |
+| 行为噪声 | ❌ | ✅ |
 
 ---
 
@@ -218,8 +251,15 @@ async function humanType(element, text) {
 **解决方案：**
 1. 确保已安装扩展（`chrome://extensions/`）
 2. 确保扩展已启用
-3. 刷新 Chrome 页面
-4. 重启 Daemon
+3. 点击扩展页面的**刷新按钮**重新加载扩展
+4. 运行 `xhs daemon status` 检查连接
+
+### Service Worker 休眠
+
+Chrome MV3 的 Service Worker 会在空闲时休眠，扩展已实现自动重连机制。如果遇到连接断开：
+
+1. 刷新扩展页面
+2. 或执行任意命令触发唤醒
 
 ### 未登录
 
@@ -248,6 +288,7 @@ xiaohongshu-cli/
 ├── extension/                    # Chrome 扩展
 │   ├── manifest.json            # 扩展配置
 │   ├── background.js            # Service Worker
+│   ├── stealth.js               # 反检测脚本
 │   └── content.js               # 真人行为模拟
 ├── src/
 │   ├── daemon/                   # Daemon 服务
@@ -255,6 +296,7 @@ xiaohongshu-cli/
 │   │   └── client.ts            # 客户端库
 │   ├── browser/
 │   │   └── bridge-page.ts       # 通过 Daemon 操作浏览器
+│   ├── stealth/                  # 反检测模块
 │   └── index.ts                 # CLI 入口
 └── package.json
 ```

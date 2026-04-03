@@ -46,7 +46,7 @@ export class BridgePage {
   /**
    * 导航到 URL
    */
-  async goto(url: string): Promise<void> {
+  async goto(url: string): Promise<string> {
     const result = await client.navigate(url, this.activeTabId || undefined);
     this.activeTabId = result.tabId;
 
@@ -55,6 +55,8 @@ export class BridgePage {
 
     // 注入元素引用
     await this.injectElementRefs();
+
+    return result.url;
   }
 
   /**

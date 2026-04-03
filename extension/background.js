@@ -332,7 +332,14 @@ async function executeCommand(cmd) {
           chrome.tabs.onUpdated.addListener(listener);
         });
 
-        return { success: true, tabId: activeTabId };
+        // 获取实际的 URL（可能被重定向）
+        let actualUrl = cmd.url;
+        try {
+          const tab = await chrome.tabs.get(activeTabId);
+          actualUrl = tab.url || cmd.url;
+        } catch {}
+
+        return { success: true, tabId: activeTabId, url: actualUrl };
       }
 
       // ==================== 配置命令 ====================
