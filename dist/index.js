@@ -274,8 +274,8 @@ xiaohongshu
       (() => {
         const notes = [];
 
-        // 首页 Feed 流的笔记卡片
-        document.querySelectorAll('a[href*="/explore/"]').forEach(el => {
+        // 使用正确的选择器 - 只获取可见的 cover 卡片
+        document.querySelectorAll('a[href*="/explore/"][class*="cover"]').forEach(el => {
           const href = el.getAttribute('href') || '';
           const match = href.match(/explore\\/([a-f0-9]+)/);
           if (!match) return;
@@ -375,7 +375,14 @@ xiaohongshu
     // 第一步：找到卡片并滚动到可见位置
     const cardInfo = await page.evaluate(`
       (() => {
-        const allCards = document.querySelectorAll('section a[href*="/explore/"]');
+        // 使用正确的选择器 - 带 cover 类的链接才有正确的位置
+        let allCards = document.querySelectorAll('a[href*="/explore/"][class*="cover"]');
+
+        // 如果找不到，尝试其他选择器
+        if (allCards.length === 0) {
+          allCards = document.querySelectorAll('section a[href*="/explore/"]');
+        }
+
         const cards = Array.from(allCards);
 
         if (cards.length === 0) {
@@ -429,12 +436,18 @@ xiaohongshu
         console.error(chalk.red(`✗ ${cardInfo?.error || '获取卡片失败'}`));
         return;
     }
-    // 等待滚动完成
-    await page.wait(0.5);
+    // 等待滚动完成和页面渲染
+    await page.wait(1.5);
     // 第二步：获取卡片位置并用真人行为点击
     const position = await page.evaluate(`
       (() => {
-        const allCards = document.querySelectorAll('section a[href*="/explore/"]');
+        // 使用正确的选择器
+        let allCards = document.querySelectorAll('a[href*="/explore/"][class*="cover"]');
+
+        if (allCards.length === 0) {
+          allCards = document.querySelectorAll('section a[href*="/explore/"]');
+        }
+
         const cards = Array.from(allCards);
 
         const seen = new Set();
@@ -636,7 +649,8 @@ xiaohongshu
     const rawResults = await page.evaluate(`
       (() => {
         const notes = [];
-        document.querySelectorAll('a[href*="/explore/"]').forEach(el => {
+        // 使用正确的选择器 - 只获取可见的 cover 卡片
+        document.querySelectorAll('a[href*="/explore/"][class*="cover"]').forEach(el => {
           const href = el.getAttribute('href') || '';
           const match = href.match(/explore\\/([a-f0-9]+)/);
           if (!match) return;
@@ -675,8 +689,16 @@ xiaohongshu
     `);
     const feed = Array.isArray(rawResults) ? rawResults.slice(0, 20) : [];
     writeFeedCache(feed);
-    console.log(chalk.dim(`索引已更新 (${feed.length} 条)`));
-    console.log(chalk.dim('运行 xhs xiaohongshu view <编号> 查看笔记'));
+    console.log(chalk.green(`✓ 索引已更新 (${feed.length} 条)`));
+    console.log(chalk.dim('\n提示: 使用 xhs xiaohongshu view <编号> 查看笔记详情\n'));
+    feed.forEach((item, i) => {
+        console.log(`  [${i + 1}] ${chalk.cyan(item.id)}`);
+        console.log(`      ${chalk.dim(item.title.slice(0, 40))}`);
+        if (item.author) {
+            console.log(`      ${chalk.dim('@' + item.author)}`);
+        }
+        console.log();
+    });
 });
 xiaohongshu
     .command('refresh')
@@ -696,7 +718,8 @@ xiaohongshu
     const rawResults = await page.evaluate(`
       (() => {
         const notes = [];
-        document.querySelectorAll('a[href*="/explore/"]').forEach(el => {
+        // 使用正确的选择器 - 只获取可见的 cover 卡片
+        document.querySelectorAll('a[href*="/explore/"][class*="cover"]').forEach(el => {
           const href = el.getAttribute('href') || '';
           const match = href.match(/explore\\/([a-f0-9]+)/);
           if (!match) return;
@@ -760,7 +783,8 @@ xiaohongshu
     const rawResults = await page.evaluate(`
       (() => {
         const notes = [];
-        document.querySelectorAll('a[href*="/explore/"]').forEach(el => {
+        // 使用正确的选择器
+        document.querySelectorAll('a[href*="/explore/"][class*="cover"]').forEach(el => {
           const href = el.getAttribute('href') || '';
           const match = href.match(/explore\\/([a-f0-9]+)/);
           if (match) {
