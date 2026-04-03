@@ -54,11 +54,32 @@ let cdpConfig = {
 };
 
 /**
+ * 从 storage 加载 CDP 配置（MV3 Service Worker 持久化）
+ */
+async function loadCdpConfig() {
+  try {
+    const result = await chrome.storage.local.get('cdpEnabled');
+    if (result.cdpEnabled !== undefined) {
+      cdpConfig.enabled = result.cdpEnabled;
+    }
+  } catch (e) {
+    console.error('[XHS Bridge] Failed to load CDP config:', e);
+  }
+}
+
+/**
  * 配置 CDP 模式
  * @param {boolean} enabled - 是否启用 CDP（isTrusted=true 事件）
  */
-function setCdpMode(enabled) {
+async function setCdpMode(enabled) {
   cdpConfig.enabled = enabled;
+
+  // 持久化到 storage
+  try {
+    await chrome.storage.local.set({ cdpEnabled: enabled });
+  } catch (e) {
+    console.error('[XHS Bridge] Failed to save CDP config:', e);
+  }
 
   // 如果禁用，分离所有已附加的 debugger
   if (!enabled) {
@@ -218,6 +239,310 @@ async function cdpType(tabId, text) {
   }
 }
 
+// ==================== CDP 真人轨迹模拟 ====================
+
+/**
+ * 生成贝塞尔曲线控制点（真人轨迹）
+ */
+function generateBezierPoints(start, end, steps) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  const baseOffset = Math.min(distance * 0.3, 100);
+  const offsetVariance = baseOffset * (0.5 + Math.random());
+
+  const cp1Ratio = 0.15 + Math.random() * 0.3;
+  const cp2Ratio = 0.55 + Math.random() * 0.3;
+
+  const angle = Math.atan2(dy, dx);
+  const perpX = -Math.sin(angle);
+  const perpY = Math.cos(angle);
+
+  const arcDirection = Math.random() > 0.5 ? 1 : -1;
+  const arcAmount = (0.1 + Math.random() * 0.3) * distance * arcDirection;
+
+  const cp1 = {
+    x: start.x + dx * cp1Ratio + perpX * arcAmount * 0.5 + (Math.random() - 0.5) * offsetVariance,
+    y: start.y + dy * cp1Ratio + perpY * arcAmount * 0.5 + (Math.random() - 0.5) * offsetVariance,
+  };
+
+  const cp2 = {
+    x: start.x + dx * cp2Ratio + perpX * arcAmount + (Math.random() - 0.5) * offsetVariance,
+    y: start.y + dy * cp2Ratio + perpY * arcAmount + (Math.random() - 0.5) * offsetVariance,
+  };
+
+  const points = [];
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const t2 = t * t;
+    const t3 = t2 * t;
+    const mt = 1 - t;
+    const mt2 = mt * mt;
+    const mt3 = mt2 * mt;
+
+    let x = mt3 * start.x + 3 * mt2 * t * cp1.x + 3 * mt * t2 * cp2.x + t3 * end.x;
+    let y = mt3 * start.y + 3 * mt2 * t * cp1.y + 3 * mt * t2 * cp2.y + t3 * end.y;
+
+    // 添加随机抖动
+    if (i > 0 && i < steps) {
+      const baseJitter = 1 + distance * 0.01;
+      x += (Math.random() - 0.5) * baseJitter * 2;
+      y += (Math.random() - 0.5) * baseJitter * 2;
+    }
+
+    points.push({ x: Math.round(x), y: Math.round(y) });
+  }
+
+  return points;
+}
+
+// 记录当前鼠标位置
+let currentMousePos = { x: 100, y: 100 };
+
+/**
+ * CDP 真人轨迹鼠标移动
+ */
+async function cdpHumanMouseMove(tabId, x, y) {
+  if (!cdpConfig.enabled || !cdpConfig.attachedTabs.has(tabId)) return false;
+
+  const distance = Math.sqrt(Math.pow(x - currentMousePos.x, 2) + Math.pow(y - currentMousePos.y, 2));
+  const baseSteps = Math.floor(distance / (15 + Math.random() * 10));
+  const steps = Math.max(8, Math.min(40, baseSteps));
+
+  const path = generateBezierPoints(currentMousePos, { x, y }, steps);
+
+  for (let i = 0; i < path.length; i++) {
+    const point = path[i];
+    const floatX = addFloatJitter(point.x);
+    const floatY = addFloatJitter(point.y);
+
+    await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: floatX,
+      y: floatY,
+    });
+
+    currentMousePos = point;
+
+    // 速度曲线：加速-匀速-减速
+    const progress = i / path.length;
+    let speedFactor;
+    if (progress < 0.2) {
+      speedFactor = progress / 0.2;
+    } else if (progress > 0.8) {
+      speedFactor = (1 - progress) / 0.2;
+    } else {
+      speedFactor = 1;
+    }
+    speedFactor = 0.3 + speedFactor * 0.7;
+
+    const baseDelay = 10 + distance * 0.05;
+    const delay = baseDelay / speedFactor + (Math.random() - 0.5) * 6;
+    await new Promise(r => setTimeout(r, Math.max(5, delay)));
+  }
+
+  return true;
+}
+
+/**
+ * CDP 真人点击（带轨迹）
+ */
+async function cdpHumanClick(tabId, x, y) {
+  if (!cdpConfig.enabled) return false;
+  if (!await ensureDebuggerAttached(tabId)) return false;
+
+  // 移动到目标位置（带轨迹）
+  await cdpHumanMouseMove(tabId, x, y);
+
+  // 悬停延迟
+  await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+
+  // 按下
+  const floatX = addFloatJitter(x);
+  const floatY = addFloatJitter(y);
+  await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    x: floatX,
+    y: floatY,
+    button: 'left',
+    clickCount: 1,
+  });
+
+  // 按压时间（真人 50-150ms）
+  await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+
+  // 释放
+  await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    x: floatX,
+    y: floatY,
+    button: 'left',
+    clickCount: 1,
+  });
+
+  // 点击后延迟
+  await new Promise(r => setTimeout(r, 100 + Math.random() * 200));
+
+  return true;
+}
+
+/**
+ * CDP 真人输入（带随机延迟）
+ */
+async function cdpHumanType(tabId, text) {
+  if (!cdpConfig.enabled || !cdpConfig.attachedTabs.has(tabId)) return false;
+
+  // 3% 概率模拟打错字
+  const simulateTypo = Math.random() < 0.03;
+  let typoIndex = simulateTypo ? Math.floor(text.length * (0.3 + Math.random() * 0.4)) : -1;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    // 模拟打错字
+    if (i === typoIndex) {
+      const wrongChar = String.fromCharCode(char.charCodeAt(0) + (Math.random() > 0.5 ? 1 : -1));
+      await cdpKeyDown(tabId, wrongChar, wrongChar);
+      await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+      await cdpKeyUp(tabId, wrongChar);
+      await new Promise(r => setTimeout(r, 100 + Math.random() * 200)); // 发现错误
+
+      // 删除
+      await cdpKeyDown(tabId, 'Backspace');
+      await new Promise(r => setTimeout(r, 50 + Math.random() * 50));
+      await cdpKeyUp(tabId, 'Backspace');
+      await new Promise(r => setTimeout(r, 100 + Math.random() * 100)); // 纠正延迟
+    }
+
+    await cdpKeyDown(tabId, char, char);
+    await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+    await cdpKeyUp(tabId, char);
+
+    // 随机延迟
+    let delay = 30 + Math.random() * 70;
+
+    // 5% 概率停顿更久
+    if (Math.random() < 0.05) {
+      delay += 200 + Math.random() * 400;
+    }
+
+    // 标点符号后多等一会
+    if ([',', '.', '!', '?', '，', '。', '！', '？'].includes(char)) {
+      delay += 100 + Math.random() * 200;
+    }
+
+    await new Promise(r => setTimeout(r, delay));
+  }
+
+  return true;
+}
+
+/**
+ * 随机延迟
+ */
+function randomDelay(min, max) {
+  return new Promise(r => setTimeout(r, min + Math.random() * (max - min)));
+}
+
+/**
+ * CDP 评论功能（真人行为）
+ */
+async function cdpXhsComment(tabId, text) {
+  if (!cdpConfig.enabled) return { success: false, error: 'CDP 未启用', needCdp: true };
+  if (!await ensureDebuggerAttached(tabId)) return { success: false, error: 'Debugger 附加失败' };
+
+  // 思考时间
+  await randomDelay(400, 1000);
+
+  // 1. 获取评论按钮位置并点击
+  const chatBtnResult = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      const btn = document.querySelector('.chat-wrapper');
+      if (!btn) return null;
+      const rect = btn.getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, visible: rect.width > 0 };
+    },
+  });
+
+  const chatBtnPos = chatBtnResult[0]?.result;
+  if (!chatBtnPos) return { success: false, error: '未找到评论按钮' };
+
+  await cdpHumanClick(tabId, chatBtnPos.x, chatBtnPos.y);
+  await randomDelay(800, 1500); // 等待评论区加载
+
+  // 2. 获取输入框位置并点击
+  const inputResult = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      // 多种选择器尝试
+      const selectors = ['#content-textarea', '[contenteditable="true"]', 'textarea[placeholder*="评论"]'];
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, visible: rect.width > 0 };
+        }
+      }
+      return null;
+    },
+  });
+
+  const inputPos = inputResult[0]?.result;
+  if (!inputPos) return { success: false, error: '未找到评论输入框' };
+
+  await cdpHumanClick(tabId, inputPos.x, inputPos.y);
+  await randomDelay(200, 400);
+
+  // 3. 输入评论内容
+  await cdpHumanType(tabId, text);
+  await randomDelay(300, 600);
+
+  // 4. 获取发送按钮位置并点击
+  const submitResult = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      const selectors = ['button.btn.submit', 'button[class*="submit"]:not([disabled])', '[class*="send-btn"]:not([disabled])'];
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el && !el.disabled) {
+          const rect = el.getBoundingClientRect();
+          return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, visible: rect.width > 0 };
+        }
+      }
+      return null;
+    },
+  });
+
+  const submitPos = submitResult[0]?.result;
+  if (!submitPos) return { success: false, error: '未找到发送按钮' };
+
+  await cdpHumanClick(tabId, submitPos.x, submitPos.y);
+  await randomDelay(500, 1000);
+
+  // 5. 验证发送结果
+  const verifyResult = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      // 检查是否有错误提示
+      const errorEl = document.querySelector('[class*="error"]:not([style*="none"])');
+      if (errorEl && errorEl.offsetParent !== null) {
+        return { hasError: true, message: errorEl.textContent || '发送失败' };
+      }
+      return { hasError: false };
+    },
+  });
+
+  const verify = verifyResult[0]?.result;
+  if (verify?.hasError) {
+    return { success: false, error: verify.message };
+  }
+
+  return { success: true, message: '评论已发送', method: 'cdp', isTrusted: true };
+}
+
 // 连接 Daemon
 async function connectDaemon() {
   if (connected) return true;
@@ -365,7 +690,7 @@ async function executeCommand(cmd) {
 
       case 'setConfig': {
         if (cmd.cdp !== undefined) {
-          setCdpMode(cmd.cdp);
+          await setCdpMode(cmd.cdp);
         }
         return { success: true, cdp: cdpConfig.enabled };
       }
@@ -646,7 +971,13 @@ async function executeCommand(cmd) {
         const tabId = await resolveTabId(cmd.tabId);
         if (!tabId) return { success: false, error: 'No active tab' };
 
-        // 默认使用 content script
+        // 优先使用 CDP 模式（更安全，isTrusted=true）
+        if (cdpConfig.enabled) {
+          const result = await cdpXhsComment(tabId, cmd.text);
+          return result;
+        }
+
+        // 回退到 content script
         const response = await chrome.tabs.sendMessage(tabId, {
           action: 'xhsComment',
           text: cmd.text,
@@ -729,6 +1060,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 // 监听 Service Worker 启动
 chrome.runtime.onInstalled.addListener(() => {
   connected = false; // 重置连接状态
+  loadCdpConfig();   // 加载持久化的 CDP 配置
   connectDaemon();
   startAlarms();
   startRandomPolling();
@@ -736,6 +1068,7 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.runtime.onStartup.addListener(() => {
   connected = false; // 重置连接状态
+  loadCdpConfig();   // 加载持久化的 CDP 配置
   connectDaemon();
   startAlarms();
   startRandomPolling();
@@ -783,6 +1116,7 @@ function startRandomPolling() {
 }
 
 // 初始化
+loadCdpConfig();  // 加载持久化的 CDP 配置
 connectDaemon();
 startAlarms();
 startRandomPolling();
