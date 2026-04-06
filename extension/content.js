@@ -3,6 +3,12 @@
  *
  * 在页面上下文中执行真人行为模拟
  * 包括：鼠标轨迹、随机延迟、打字模拟、滚动模拟
+ *
+ * 安全特性：
+ * - isTrusted 欺骗
+ * - 动态行为噪声
+ * - 完整事件链
+ * - 随机微操作
  */
 
 (function() {
@@ -20,14 +26,217 @@
   };
 
   // ==================== 隐蔽状态存储 ====================
-  // 使用闭包变量，避免全局变量被检测
+  // 使用 WeakMap 和 Symbol 实现更隐蔽的状态存储，避免全局变量被检测
 
-  const _state = {
-    mousePos: { x: 100 + Math.random() * 400, y: 100 + Math.random() * 400 },
-    sessionStart: Date.now(),
-    actionCount: 0,
-    lastActionTime: 0,
-  };
+  const _stateKey = Symbol.for('_xhs_' + Math.random().toString(36).slice(2, 10));
+  const _stateStore = new WeakMap();
+
+  // 获取状态的隐蔽访问器
+  function getState() {
+    if (!_stateStore.has(window)) {
+      // 初始化状态 - 使用更随机的初始位置
+      const viewportWidth = Math.min(window.innerWidth, 1920);
+      const viewportHeight = Math.min(window.innerHeight, 1080);
+      _stateStore.set(window, {
+        mousePos: {
+          x: Math.floor(50 + Math.random() * (viewportWidth - 100)),
+          y: Math.floor(50 + Math.random() * (viewportHeight - 100))
+        },
+        sessionStart: Date.now(),
+        actionCount: 0,
+        lastActionTime: 0,
+        // 动态噪声参数（动态化以避免固定模式）
+        noiseParams: {
+          microActionProb: 0.03 + Math.random() * 0.05,
+          hoverProb: 0.10 + Math.random() * 0.10,
+          correctionProb: 0.05 + Math.random() * 0.10,
+          pageMoveProb: 0.03 + Math.random() * 0.05,
+          thinkProb: 0.08 + Math.random() * 0.07,
+          lastUpdate: Date.now(),
+        },
+        // 速度曲线参数 - 动态化
+        speedCurve: {
+          accelRatio: 0.15 + Math.random() * 0.10,  // 加速阶段比例
+          decelRatio: 0.15 + Math.random() * 0.10,  // 减速阶段比例
+          minSpeedFactor: 0.2 + Math.random() * 0.15,
+        },
+      });
+    }
+    return _stateStore.get(window);
+  }
+
+  // 便捷访问
+  const _state = { get current() { return getState(); } };
+
+  // ==================== isTrusted 欺骗 ====================
+
+  /**
+   * 创建带有 isTrusted=true 欺骗的事件
+   * 使用多层欺骗策略
+   */
+  function createTrustedEvent(type, eventInit, eventType = 'Mouse') {
+    const EventClass = eventType === 'Mouse' ? MouseEvent :
+                       eventType === 'Pointer' ? PointerEvent :
+                       eventType === 'Keyboard' ? KeyboardEvent :
+                       eventType === 'Wheel' ? WheelEvent : Event;
+
+    const event = new EventClass(type, eventInit);
+
+    // 尝试多种方法覆盖 isTrusted 属性
+    try {
+      // 方法1: 直接定义属性
+      Object.defineProperty(event, 'isTrusted', {
+        value: true,
+        writable: false,
+        configurable: true,
+        enumerable: true
+      });
+    } catch (e) {
+      // 方法2: 使用 getter
+      try {
+        Object.defineProperty(event, 'isTrusted', {
+          get: function() { return true; },
+          configurable: true,
+          enumerable: true
+        });
+      } catch (e2) {
+        // 静默失败，某些浏览器不允许修改
+      }
+    }
+
+    return event;
+  }
+
+  /**
+   * 分发事件并尝试绕过检测
+   */
+  function dispatchTrustedEvent(target, event) {
+    if (!target) return;
+
+    try {
+      // 使用原生 dispatchEvent 方法，避免被 hook
+      const nativeDispatch = EventTarget.prototype.dispatchEvent;
+      nativeDispatch.call(target, event);
+    } catch (e) {
+      // 降级到普通分发
+      target.dispatchEvent(event);
+    }
+  }
+
+  /**
+   * 创建完整的鼠标事件
+   */
+  function createMouseEvent(type, x, y, extraInit = {}) {
+    const state = _state.current;
+    const lastPos = state.mousePos;
+
+    // 计算 movementX/Y（相对于上次位置的偏移）
+    const movementX = x - lastPos.x;
+    const movementY = y - lastPos.y;
+
+    const baseInit = {
+      bubbles: true,
+      cancelable: type !== 'mouseenter' && type !== 'mouseleave',
+      clientX: x,
+      clientY: y,
+      screenX: x + window.screenX,
+      screenY: y + window.screenY,
+      button: extraInit.button !== undefined ? extraInit.button : 0,
+      buttons: extraInit.buttons !== undefined ? extraInit.buttons : 0,
+      relatedTarget: extraInit.relatedTarget || null,
+      view: window,
+      detail: 0,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+      metaKey: false,
+      movementX: movementX,
+      movementY: movementY,
+    };
+
+    return createTrustedEvent(type, { ...baseInit, ...extraInit }, 'Mouse');
+  }
+
+  /**
+   * 获取或创建 InputDeviceCapabilities 对象
+   */
+  let _inputDeviceCapabilities = null;
+  function getInputDeviceCapabilities() {
+    if (!_inputDeviceCapabilities && typeof InputDeviceCapabilities !== 'undefined') {
+      try {
+        _inputDeviceCapabilities = new InputDeviceCapabilities({
+          fireTouchEvents: false,
+        });
+      } catch (e) {
+        // 某些浏览器可能不支持
+      }
+    }
+    return _inputDeviceCapabilities;
+  }
+
+  /**
+   * 创建完整的 Pointer 事件
+   */
+  function createPointerEvent(type, x, y, extraInit = {}) {
+    const isDown = type.includes('down');
+    const isUp = type.includes('up');
+
+    const baseInit = {
+      bubbles: true,
+      cancelable: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+      isPrimary: true,
+      clientX: x,
+      clientY: y,
+      screenX: x + window.screenX,
+      screenY: y + window.screenY,
+      button: isDown || isUp ? 0 : -1,
+      buttons: isDown ? 1 : (isUp ? 0 : 0),
+      pressure: isDown ? 0.5 : 0,
+      tiltX: 0,
+      tiltY: 0,
+      twist: 0,
+      tangentialPressure: 0,
+      width: 1,
+      height: 1,
+      view: window,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+      metaKey: false,
+    };
+
+    return createTrustedEvent(type, { ...baseInit, ...extraInit }, 'Pointer');
+  }
+
+  // ==================== 动态噪声参数更新 ====================
+
+  /**
+   * 更新动态噪声参数
+   * 定期更新以避免固定模式
+   */
+  function updateNoiseParams() {
+    const state = _state.current;
+    const now = Date.now();
+    // 每 30-90 秒更新一次参数
+    if (now - state.noiseParams.lastUpdate > random(30000, 90000)) {
+      state.noiseParams = {
+        microActionProb: random(0.03, 0.08),
+        hoverProb: random(0.10, 0.20),
+        correctionProb: random(0.05, 0.15),
+        pageMoveProb: random(0.03, 0.08),
+        thinkProb: random(0.08, 0.15),
+        lastUpdate: now,
+      };
+      // 同时更新速度曲线参数
+      state.speedCurve = {
+        accelRatio: random(0.12, 0.22),
+        decelRatio: random(0.12, 0.22),
+        minSpeedFactor: random(0.20, 0.35),
+      };
+    }
+  }
 
   // ==================== 行为噪声生成器 ====================
 
@@ -42,15 +251,18 @@
     async randomMicroAction() {
       if (!CONFIG.behaviorNoise) return;
 
-      // 5% 概率执行微操作
-      if (Math.random() < 0.05) {
+      updateNoiseParams();
+      const state = _state.current;
+      const prob = state.noiseParams.microActionProb;
+
+      if (Math.random() < prob) {
         const actions = [
           // 随机移动一小段
           async () => {
             const offsetX = random(-20, 20);
             const offsetY = random(-20, 20);
-            const newX = Math.max(0, _state.mousePos.x + offsetX);
-            const newY = Math.max(0, _state.mousePos.y + offsetY);
+            const newX = Math.max(0, state.mousePos.x + offsetX);
+            const newY = Math.max(0, state.mousePos.y + offsetY);
             await humanMouseMove(newX, newY);
           },
           // 随机滚动一点点
@@ -60,7 +272,31 @@
           // 短暂停顿（模拟思考）
           async () => {
             await sleep(random(100, 300));
-          }
+          },
+          // 随机焦点切换
+          async () => {
+            const randomElement = document.elementsFromPoint(
+              random(100, window.innerWidth - 100),
+              random(100, window.innerHeight - 100)
+            )[0];
+            if (randomElement && randomElement.focus) {
+              try { randomElement.focus(); } catch (e) {}
+            }
+          },
+          // 随机滚动到页面顶部再回来
+          async () => {
+            const currentScroll = window.scrollY;
+            window.scrollTo({ top: 0, behavior: 'instant' });
+            await sleep(random(100, 300));
+            window.scrollTo({ top: currentScroll, behavior: 'instant' });
+          },
+          // 模拟选择文本
+          async () => {
+            const selection = window.getSelection();
+            if (selection) {
+              selection.removeAllRanges();
+            }
+          },
         ];
         const action = actions[Math.floor(Math.random() * actions.length)];
         await action();
@@ -70,35 +306,60 @@
     /**
      * 计算自适应延迟
      * 根据会话时长和操作频率调整延迟（动态阈值）
+     * 增强随机性和自然性
      */
     getAdaptiveDelay(baseMs) {
-      const sessionDuration = Date.now() - _state.sessionStart;
-      const actionsPerMinute = _state.actionCount / (sessionDuration / 60000);
+      const state = _state.current;
+      const sessionDuration = Date.now() - state.sessionStart;
+      const actionsPerMinute = state.actionCount / Math.max(sessionDuration / 60000, 0.1);
 
       // 动态阈值：根据时间段变化
       // 模拟真人：刚开始快，之后变慢，偶尔又快一点
       const hour = new Date().getHours();
-      const timeFactor = hour >= 9 && hour <= 18 ? 1.0 : 1.3; // 工作时间稍快
-      const baseThreshold = 25 + Math.random() * 15; // 动态阈值 25-40
+      const dayOfWeek = new Date().getDay();
+
+      // 工作日工作时间稍快，周末和夜间稍慢
+      let timeFactor = 1.0;
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        timeFactor = 1.2; // 周末更慢
+      } else if (hour >= 9 && hour <= 12) {
+        timeFactor = 0.9; // 上午工作高峰
+      } else if (hour >= 14 && hour <= 18) {
+        timeFactor = 0.95; // 下午工作时间
+      } else if (hour >= 22 || hour <= 6) {
+        timeFactor = 1.3; // 深夜更慢
+      }
+
+      // 动态阈值（带随机偏移）
+      const baseThreshold = 20 + gaussian(10, 3); // 均值30，有波动
 
       // 如果操作太频繁，增加延迟
       let multiplier = 1;
       if (actionsPerMinute > baseThreshold) {
-        multiplier = 1 + (actionsPerMinute - baseThreshold) * 0.02 * timeFactor;
+        multiplier = 1 + Math.pow((actionsPerMinute - baseThreshold) / baseThreshold, 1.5) * timeFactor;
       }
 
-      // 随机变化（范围更大）
-      const noise = 1 + (Math.random() - 0.5) * 0.6;
+      // 会话疲劳：长时间操作后变慢
+      const fatigueFactor = 1 + Math.min(sessionDuration / 3600000, 0.5); // 最多增加50%
 
-      return baseMs * multiplier * noise;
+      // 多层随机变化
+      const noise = 1 + gaussian(0, 0.3); // 高斯噪声
+      const burstFactor = Math.random() < 0.05 ? random(0.5, 0.8) : 1; // 5%概率突然变快（爆发操作）
+
+      const finalDelay = baseMs * multiplier * fatigueFactor * noise * timeFactor / burstFactor;
+
+      // 确保在合理范围内
+      return Math.max(baseMs * 0.3, Math.min(baseMs * 3, finalDelay));
     },
 
     /**
      * 记录操作
      */
     recordAction() {
-      _state.actionCount++;
-      _state.lastActionTime = Date.now();
+      const state = _state.current;
+      state.actionCount++;
+      state.lastActionTime = Date.now();
+      updateNoiseParams();
     }
   };
 
@@ -124,7 +385,7 @@
   function gaussian(mean, stdDev) {
     const u1 = Math.random();
     const u2 = Math.random();
-    const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    const z = Math.sqrt(-2 * Math.log(u1 || 0.0001)) * Math.cos(2 * Math.PI * u2);
     return mean + z * stdDev;
   }
 
@@ -227,7 +488,8 @@
    */
   async function humanMouseMove(x, y) {
     // 获取当前鼠标位置（使用隐蔽状态）
-    const currentPos = _state.mousePos;
+    const state = _state.current;
+    const currentPos = state.mousePos;
 
     // 计算步数（基于距离，添加随机性）
     const distance = Math.sqrt(Math.pow(x - currentPos.x, 2) + Math.pow(y - currentPos.y, 2));
@@ -237,37 +499,65 @@
     // 生成贝塞尔曲线路径
     const path = generateBezierPoints(currentPos, { x, y }, steps);
 
+    let lastElement = null;
+
     // 模拟移动事件
     for (let i = 0; i < path.length; i++) {
       const point = path[i];
 
+      // 获取当前位置下的元素
+      const elementUnderPoint = document.elementFromPoint(point.x, point.y);
+
+      // 触发 mouseout/mouseover 事件（元素变化时）
+      if (lastElement && lastElement !== elementUnderPoint) {
+        // 离开上一个元素
+        dispatchTrustedEvent(lastElement, createMouseEvent('mouseout', point.x, point.y, {
+          relatedTarget: elementUnderPoint
+        }));
+        dispatchTrustedEvent(lastElement, createMouseEvent('mouseleave', point.x, point.y, {
+          relatedTarget: elementUnderPoint
+        }));
+
+        // 进入新元素
+        if (elementUnderPoint) {
+          dispatchTrustedEvent(elementUnderPoint, createMouseEvent('mouseover', point.x, point.y, {
+            relatedTarget: lastElement
+          }));
+          dispatchTrustedEvent(elementUnderPoint, createMouseEvent('mouseenter', point.x, point.y, {
+            relatedTarget: lastElement
+          }));
+        }
+      }
+
       // 触发 mousemove 事件
-      const event = new MouseEvent('mousemove', {
-        bubbles: true,
-        cancelable: true,
-        clientX: point.x,
-        clientY: point.y,
-      });
-      document.elementFromPoint?.(point.x, point.y)?.dispatchEvent(event);
+      const moveEvent = createMouseEvent('mousemove', point.x, point.y);
+      if (elementUnderPoint) {
+        dispatchTrustedEvent(elementUnderPoint, moveEvent);
+      }
+      // 同时在 document 上触发
+      dispatchTrustedEvent(document, createMouseEvent('mousemove', point.x, point.y));
+
+      lastElement = elementUnderPoint;
 
       // 更新记录的位置（隐蔽存储）
-      _state.mousePos = point;
+      state.mousePos = point;
 
       // 延迟计算：中间快，两头慢（加速-匀速-减速）
+      // 使用动态化的速度曲线参数
       const progress = i / path.length;
-      // 使用更自然的速度曲线
+      const curve = state.speedCurve;
       let speedFactor;
-      if (progress < 0.2) {
+      if (progress < curve.accelRatio) {
         // 加速阶段
-        speedFactor = progress / 0.2;
-      } else if (progress > 0.8) {
+        speedFactor = (progress / curve.accelRatio);
+      } else if (progress > (1 - curve.decelRatio)) {
         // 减速阶段
-        speedFactor = (1 - progress) / 0.2;
+        speedFactor = ((1 - progress) / curve.decelRatio);
       } else {
         // 匀速阶段
         speedFactor = 1;
       }
-      speedFactor = 0.3 + speedFactor * 0.7; // 确保最小速度
+      speedFactor = curve.minSpeedFactor + speedFactor * (1 - curve.minSpeedFactor);
 
       const baseDelay = 10 + distance * 0.05;
       const delay = baseDelay / speedFactor + random(-3, 3);
@@ -281,7 +571,9 @@
    * 随机悬停 - 模拟在移动过程中停顿
    */
   async function randomHover(duration = 100) {
-    if (Math.random() < 0.15) {  // 15% 概率悬停
+    updateNoiseParams();
+    const state = _state.current;
+    if (Math.random() < state.noiseParams.hoverProb) {
       await sleep(duration + random(0, 200));
     }
   }
@@ -303,8 +595,11 @@
    * 模拟"失误"移动 - 先移动到错误位置，再纠正
    */
   async function moveWithCorrection(targetX, targetY) {
-    // 10% 概率模拟失误
-    if (Math.random() < 0.1) {
+    updateNoiseParams();
+    const state = _state.current;
+    const prob = state.noiseParams.correctionProb;
+
+    if (Math.random() < prob) {
       // 先移动到附近但不准确的位置
       const wrongX = targetX + random(-30, 30);
       const wrongY = targetY + random(-30, 30);
@@ -321,7 +616,11 @@
    * 随机页面外移动 - 模拟用户查看其他区域
    */
   async function randomPageMove() {
-    if (Math.random() < 0.05) {  // 5% 概率
+    updateNoiseParams();
+    const state = _state.current;
+    const prob = state.noiseParams.pageMoveProb;
+
+    if (Math.random() < prob) {
       const randomX = random(50, window.innerWidth - 50);
       const randomY = random(50, window.innerHeight - 50);
       await humanMouseMove(randomX, randomY);
@@ -334,8 +633,10 @@
    */
   async function thinkTime(minMs = 200, maxMs = 800) {
     const base = random(minMs, maxMs);
-    // 10% 概率思考更久
-    if (Math.random() < 0.1) {
+    updateNoiseParams();
+    const state = _state.current;
+    // 使用动态概率
+    if (Math.random() < state.noiseParams.thinkProb) {
       await sleep(base + random(500, 1500));
     } else {
       await sleep(base);
@@ -408,7 +709,8 @@
   }
 
   /**
-   * 模拟真人点击（包含 PointerEvent 和 TouchEvent）
+   * 模拟真人点击（包含完整事件链）
+   * 确保事件序列完整：mousemove -> mouseover -> mouseenter -> (mousemove) -> mousedown -> mouseup -> click
    */
   async function humanClick(x, y, options = {}) {
     const { doubleClick = false, moveFirst = true, withTouch = false } = options;
@@ -447,60 +749,82 @@
       await sleep(random(10, 30));
     }
 
-    // pointerover -> pointerenter -> mouseover -> mouseenter
-    element.dispatchEvent(new PointerEvent('pointerover', createPointerEventInit('over', clickedPos.x, clickedPos.y)));
-    element.dispatchEvent(new PointerEvent('pointerenter', createPointerEventInit('enter', clickedPos.x, clickedPos.y)));
-    element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, clientX: clickedPos.x, clientY: clickedPos.y }));
-    element.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false, cancelable: false, clientX: clickedPos.x, clientY: clickedPos.y }));
+    // ==================== 完整事件链 ====================
+    // 1. pointerover -> pointerenter -> mouseover -> mouseenter
+    dispatchTrustedEvent(element, createPointerEvent('pointerover', clickedPos.x, clickedPos.y));
+    dispatchTrustedEvent(element, createPointerEvent('pointerenter', clickedPos.x, clickedPos.y));
+    dispatchTrustedEvent(element, createMouseEvent('mouseover', clickedPos.x, clickedPos.y));
+    dispatchTrustedEvent(element, createMouseEvent('mouseenter', clickedPos.x, clickedPos.y));
 
     await sleep(random(20, 60));
 
-    // pointerdown -> mousedown
-    element.dispatchEvent(new PointerEvent('pointerdown', createPointerEventInit('down', clickedPos.x, clickedPos.y)));
-    element.dispatchEvent(new MouseEvent('mousedown', {
-      bubbles: true,
-      cancelable: true,
-      clientX: clickedPos.x,
-      clientY: clickedPos.y,
+    // 2. 在元素上小范围移动（模拟真实行为）
+    const microMoveX = clickedPos.x + random(-2, 2);
+    const microMoveY = clickedPos.y + random(-2, 2);
+    dispatchTrustedEvent(element, createMouseEvent('mousemove', microMoveX, microMoveY));
+
+    await sleep(random(10, 30));
+
+    // 3. pointerdown -> mousedown
+    dispatchTrustedEvent(element, createPointerEvent('pointerdown', clickedPos.x, clickedPos.y));
+    dispatchTrustedEvent(element, createMouseEvent('mousedown', clickedPos.x, clickedPos.y, {
       button: 0,
+      buttons: 1
     }));
 
-    // 按下延迟（真实按压时间）
-    await sleep(random(50, 120));
+    // 按下延迟（真实按压时间，更广泛的范围）
+    // 大多数人点击按压时间在 60-120ms，但也有快速点击和慢速点击
+    const pressDuration = gaussian(85, 25); // 均值 85ms，标准差 25ms
+    await sleep(Math.max(40, Math.min(200, pressDuration)));
 
-    // pointerup -> mouseup -> click
-    element.dispatchEvent(new PointerEvent('pointerup', createPointerEventInit('up', clickedPos.x, clickedPos.y)));
-    element.dispatchEvent(new MouseEvent('mouseup', {
-      bubbles: true,
-      cancelable: true,
-      clientX: clickedPos.x,
-      clientY: clickedPos.y,
+    // 4. pointerup -> mouseup -> click
+    dispatchTrustedEvent(element, createPointerEvent('pointerup', clickedPos.x, clickedPos.y));
+    dispatchTrustedEvent(element, createMouseEvent('mouseup', clickedPos.x, clickedPos.y, {
       button: 0,
+      buttons: 0
     }));
-    element.dispatchEvent(new PointerEvent('click', createPointerEventInit('click', clickedPos.x, clickedPos.y)));
-    element.dispatchEvent(new MouseEvent('click', {
-      bubbles: true,
-      cancelable: true,
-      clientX: clickedPos.x,
-      clientY: clickedPos.y,
-      button: 0,
-    }));
+
+    await sleep(random(5, 15));
+
+    // 5. click 事件 - 添加 sourceCapabilities
+    const clickEvent = createMouseEvent('click', clickedPos.x, clickedPos.y, {
+      button: 0
+    });
+    // 添加 sourceCapabilities（InputDeviceCapabilities）
+    try {
+      Object.defineProperty(clickEvent, 'sourceCapabilities', {
+        value: getInputDeviceCapabilities(),
+        writable: false,
+        configurable: true,
+        enumerable: true
+      });
+    } catch (e) {}
+
+    dispatchTrustedEvent(element, createPointerEvent('click', clickedPos.x, clickedPos.y));
+    dispatchTrustedEvent(element, clickEvent);
 
     // 双击
     if (doubleClick) {
       await sleep(random(80, 200));
 
       const doublePos = addJitter(clickedPos.x, clickedPos.y, 3);
-      element.dispatchEvent(new PointerEvent('pointerdown', createPointerEventInit('down', doublePos.x, doublePos.y)));
-      element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: doublePos.x, clientY: doublePos.y, button: 0 }));
+
+      // 完整双击序列
+      dispatchTrustedEvent(element, createPointerEvent('pointerdown', doublePos.x, doublePos.y));
+      dispatchTrustedEvent(element, createMouseEvent('mousedown', doublePos.x, doublePos.y, { button: 0, buttons: 1 }));
       await sleep(random(50, 100));
-      element.dispatchEvent(new PointerEvent('pointerup', createPointerEventInit('up', doublePos.x, doublePos.y)));
-      element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: doublePos.x, clientY: doublePos.y, button: 0 }));
-      element.dispatchEvent(new PointerEvent('click', createPointerEventInit('click', doublePos.x, doublePos.y)));
-      element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: doublePos.x, clientY: doublePos.y, button: 0 }));
-      element.dispatchEvent(new PointerEvent('dblclick', createPointerEventInit('dblclick', doublePos.x, doublePos.y)));
-      element.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: doublePos.x, clientY: doublePos.y }));
+      dispatchTrustedEvent(element, createPointerEvent('pointerup', doublePos.x, doublePos.y));
+      dispatchTrustedEvent(element, createMouseEvent('mouseup', doublePos.x, doublePos.y, { button: 0, buttons: 0 }));
+      dispatchTrustedEvent(element, createPointerEvent('click', doublePos.x, doublePos.y));
+      dispatchTrustedEvent(element, createMouseEvent('click', doublePos.x, doublePos.y, { button: 0 }));
+      dispatchTrustedEvent(element, createPointerEvent('dblclick', doublePos.x, doublePos.y));
+      dispatchTrustedEvent(element, createMouseEvent('dblclick', doublePos.x, doublePos.y, { button: 0 }));
     }
+
+    // 6. 点击后移开（mouseleave/pointerleave）
+    await sleep(random(50, 150));
+    dispatchTrustedEvent(element, createMouseEvent('mouseleave', clickedPos.x, clickedPos.y));
+    dispatchTrustedEvent(element, createPointerEvent('pointerleave', clickedPos.x, clickedPos.y));
 
     // 点击后延迟
     await thinkTime(150, 400);
@@ -642,12 +966,14 @@
       const actualDelta = delta * random(0.7, 1.3);
 
       // wheel 事件
-      window.dispatchEvent(new WheelEvent('wheel', {
+      const wheelEvent = createTrustedEvent('wheel', {
         bubbles: true,
         cancelable: true,
         deltaY: actualDelta,
         deltaMode: 0,  // pixels
-      }));
+        view: window,
+      }, 'Wheel');
+      window.dispatchEvent(wheelEvent);
 
       // 实际滚动
       window.scrollBy(0, actualDelta);

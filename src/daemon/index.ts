@@ -135,8 +135,8 @@ async function handleCommand(req: http.IncomingMessage, res: http.ServerResponse
 
   console.log('[Daemon] Command received:', cmd.action, 'id:', id);
 
-  // 等待结果（最多 30 秒）
-  const timeout = cmd.timeout || 30000;
+  // 等待结果（最多 30 秒，带随机性避免固定模式）
+  const timeout = cmd.timeout || (28000 + Math.random() * 4000);
   const startTime = Date.now();
 
   while (Date.now() - startTime < timeout) {
@@ -148,8 +148,8 @@ async function handleCommand(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
-    // 等待 100ms
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // 等待 80-150ms（随机化避免固定间隔检测）
+    await new Promise(resolve => setTimeout(resolve, 80 + Math.random() * 70));
   }
 
   // 超时
@@ -175,10 +175,18 @@ server.listen(PORT, () => {
   console.log('[Daemon] Waiting for extension to connect...');
 });
 
-// 心跳检查 - 10 秒无心跳则认为扩展断开
-setInterval(() => {
-  if (lastHeartbeat && Date.now() - lastHeartbeat > 10000) {
+// 心跳检查 - 随机化间隔避免固定模式（8-12秒超时，4-6秒检查）
+let heartbeatCheckInterval = 4000 + Math.random() * 2000;
+const heartbeatTimeout = () => 8000 + Math.random() * 4000;
+
+const checkHeartbeat = () => {
+  const timeout = heartbeatTimeout();
+  if (lastHeartbeat && Date.now() - lastHeartbeat > timeout) {
     extensionConnected = false;
     console.log('[Daemon] Extension disconnected');
   }
-}, 5000);
+  // 随机化下次检查时间
+  heartbeatCheckInterval = 4000 + Math.random() * 2000;
+  setTimeout(checkHeartbeat, heartbeatCheckInterval);
+};
+setTimeout(checkHeartbeat, heartbeatCheckInterval);

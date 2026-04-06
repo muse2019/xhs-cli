@@ -158,7 +158,7 @@ export class XiaohongshuAdapter {
 
     // 打开首页，触发登录弹窗或跳转
     await this.page.goto(this.baseUrl);
-    await sleep(2000);
+    await sleep(RandomDelay.pageLoadDelay());
 
     // 点击登录按钮（如果需要）
     await this.page.evaluate(() => {
@@ -172,7 +172,7 @@ export class XiaohongshuAdapter {
     // 轮询检查登录状态
     const startTime = Date.now();
     while (Date.now() - startTime < timeoutMs) {
-      await sleep(2000);
+      await sleep(RandomDelay.humanWait(2000));
       const status = await this.checkLoginStatus();
       if (status.isLoggedIn) {
         console.log('登录成功！');
@@ -224,7 +224,7 @@ export class XiaohongshuAdapter {
     limit?: number;
   }): Promise<SearchResult> {
     await this.openSearch(keyword);
-    await sleep(1500 + Math.random() * 1000);
+    await sleep(RandomDelay.pageLoadDelay());
 
     // 等待搜索结果加载
     await this.page.waitForSelector('[class*="search-result"], .feeds-page, .note-item', 10000);
@@ -235,12 +235,13 @@ export class XiaohongshuAdapter {
         const userTab = document.querySelector('[class*="tab"]:nth-child(2), [data-type="user"]') as HTMLElement;
         if (userTab) userTab.click();
       });
-      await sleep(1500);
+      await sleep(RandomDelay.pageLoadDelay());
     }
 
-    // 滚动加载更多
+    // 滚动加载更多（使用随机次数）
     const limit = options?.limit || 20;
-    await this.loadMore(Math.ceil(limit / 10));
+    const scrollTimes = Math.ceil(limit / 10) + Math.floor(Math.random() * 2);
+    await this.loadMore(scrollTimes);
 
     const result = await this.page.evaluate(() => {
       const notes: FeedItem[] = [];
@@ -297,7 +298,7 @@ export class XiaohongshuAdapter {
     }
   ): Promise<SearchResult> {
     await this.openSearch(keyword);
-    await sleep(1500);
+    await sleep(RandomDelay.pageLoadDelay());
 
     // 点击筛选
     if (filter.sortBy) {
@@ -310,7 +311,7 @@ export class XiaohongshuAdapter {
         const tabs = document.querySelectorAll('[class*="sort-item"], [class*="filter-tab"]');
         (tabs[index] as HTMLElement)?.click();
       }, sortMap[filter.sortBy] - 1);
-      await sleep(1000);
+      await sleep(RandomDelay.actionInterval());
     }
 
     if (filter.type && filter.type !== 'all') {
@@ -318,7 +319,7 @@ export class XiaohongshuAdapter {
         const filterBtn = document.querySelector(`[data-type="${type}"], [class*="filter-${type}"]`) as HTMLElement;
         if (filterBtn) filterBtn.click();
       }, filter.type);
-      await sleep(1000);
+      await sleep(RandomDelay.actionInterval());
     }
 
     return this.search(keyword, { limit: 20 });
@@ -350,7 +351,7 @@ export class XiaohongshuAdapter {
     });
 
     if (commentBtnFound) {
-      await sleep(800 + Math.random() * 500);
+      await sleep(RandomDelay.thinkTime());
     }
 
     // 找到评论输入框
@@ -384,13 +385,13 @@ export class XiaohongshuAdapter {
       if (input) input.focus();
     });
 
-    await sleep(300 + Math.random() * 200);
+    await sleep(RandomDelay.thinkTime());
 
     // 输入评论内容（带真人行为）
     const human = this.page.getHuman();
     await human.humanType(text);
 
-    await sleep(500 + Math.random() * 500);
+    await sleep(RandomDelay.actionInterval());
 
     // 点击发送按钮
     const sendResult = await this.page.evaluate((commentText) => {
@@ -430,13 +431,13 @@ export class XiaohongshuAdapter {
       (replyBtns[index] as HTMLElement)?.click();
     }, commentIndex);
 
-    await sleep(500 + Math.random() * 300);
+    await sleep(RandomDelay.thinkTime());
 
     // 输入回复内容
     const human = this.page.getHuman();
     await human.humanType(text);
 
-    await sleep(500);
+    await sleep(RandomDelay.actionInterval());
 
     // 发送
     const result = await this.page.evaluate((replyText) => {
@@ -467,12 +468,13 @@ export class XiaohongshuAdapter {
       if (chatBtn) chatBtn.click();
     });
 
-    await sleep(1000);
+    await sleep(RandomDelay.pageLoadDelay());
 
-    // 滚动加载更多评论
-    for (let i = 0; i < Math.ceil(limit / 10); i++) {
-      await this.page.getHuman().humanScroll('down', 200);
-      await sleep(500);
+    // 滚动加载更多评论（使用随机次数）
+    const scrollRounds = Math.ceil(limit / 10) + Math.floor(Math.random() * 2);
+    for (let i = 0; i < scrollRounds; i++) {
+      await this.page.getHuman().humanScroll('down', 200 + Math.random() * 150);
+      await sleep(RandomDelay.scrollDelay());
     }
 
     return await this.page.evaluate(() => {
@@ -525,7 +527,7 @@ export class XiaohongshuAdapter {
     try {
       // 1. 打开创作者中心
       await this.page.goto('https://creator.xiaohongshu.com/publish/publish');
-      await sleep(2000 + Math.random() * 1000);
+      await sleep(RandomDelay.pageLoadDelay());
 
       // 2. 上传图片
       console.log(`上传 ${options.images.length} 张图片...`);
@@ -539,7 +541,7 @@ export class XiaohongshuAdapter {
 
       // 设置文件
       await fileInput.setInputFiles(options.images);
-      await sleep(3000 + Math.random() * 2000); // 等待上传
+      await sleep(RandomDelay.humanWait(3000)); // 等待上传
 
       // 3. 填写标题
       console.log('填写标题...');
@@ -551,7 +553,7 @@ export class XiaohongshuAdapter {
         }
       }, options.title);
 
-      await sleep(500 + Math.random() * 500);
+      await sleep(RandomDelay.actionInterval());
 
       // 4. 填写正文
       console.log('填写正文...');
@@ -565,7 +567,7 @@ export class XiaohongshuAdapter {
       const human = this.page.getHuman();
       await human.humanType(options.content);
 
-      await sleep(500 + Math.random() * 500);
+      await sleep(RandomDelay.actionInterval());
 
       // 5. 添加标签
       if (options.tags && options.tags.length > 0) {
@@ -578,14 +580,14 @@ export class XiaohongshuAdapter {
               tagInput.dispatchEvent(new Event('input', { bubbles: true }));
             }
           }, tag);
-          await sleep(500);
+          await sleep(RandomDelay.actionInterval());
 
           // 点击第一个建议
           await this.page.evaluate(() => {
             const suggestion = document.querySelector('[class*="tag-suggestion"], [class*="tag-item"]') as HTMLElement;
             if (suggestion) suggestion.click();
           });
-          await sleep(300);
+          await sleep(RandomDelay.thinkTime());
         }
       }
 
@@ -595,7 +597,7 @@ export class XiaohongshuAdapter {
           const locationBtn = document.querySelector('[class*="location-btn"], [class*="add-location"]') as HTMLElement;
           if (locationBtn) locationBtn.click();
         }, options.location);
-        await sleep(500);
+        await sleep(RandomDelay.actionInterval());
 
         await this.page.evaluate((loc) => {
           const searchInput = document.querySelector('input[placeholder*="位置"]') as HTMLInputElement;
@@ -604,13 +606,13 @@ export class XiaohongshuAdapter {
             searchInput.dispatchEvent(new Event('input', { bubbles: true }));
           }
         }, options.location);
-        await sleep(1000);
+        await sleep(RandomDelay.pageLoadDelay());
 
         await this.page.evaluate(() => {
           const firstResult = document.querySelector('[class*="location-item"], [class*="location-result"]') as HTMLElement;
           if (firstResult) firstResult.click();
         });
-        await sleep(500);
+        await sleep(RandomDelay.actionInterval());
       }
 
       // 7. 发布
@@ -620,7 +622,7 @@ export class XiaohongshuAdapter {
         if (publishBtn) publishBtn.click();
       });
 
-      await sleep(3000);
+      await sleep(RandomDelay.humanWait(3000));
 
       // 8. 检查发布结果
       const result = await this.page.evaluate(() => {
@@ -681,14 +683,14 @@ export class XiaohongshuAdapter {
     try {
       // 打开发布页面
       await this.page.goto('https://creator.xiaohongshu.com/publish/publish');
-      await sleep(2000);
+      await sleep(RandomDelay.pageLoadDelay());
 
       // 切换到视频 Tab
       await this.page.evaluate(() => {
         const videoTab = document.querySelector('[class*="video-tab"], [data-type="video"]') as HTMLElement;
         if (videoTab) videoTab.click();
       });
-      await sleep(1000);
+      await sleep(RandomDelay.pageLoadDelay());
 
       // 上传视频
       console.log('上传视频...');
@@ -703,7 +705,7 @@ export class XiaohongshuAdapter {
 
       // 等待视频上传（视频较大，需要更长时间）
       console.log('视频上传中，请耐心等待...');
-      await sleep(10000 + Math.random() * 5000);
+      await sleep(RandomDelay.humanWait(10000));
 
       // 填写标题和内容
       await this.page.evaluate((title) => {
@@ -723,7 +725,7 @@ export class XiaohongshuAdapter {
         if (publishBtn) publishBtn.click();
       });
 
-      await sleep(3000);
+      await sleep(RandomDelay.humanWait(3000));
 
       return { success: true, message: '视频发布请求已提交' };
 
@@ -877,23 +879,64 @@ export class XiaohongshuAdapter {
   // ==================== 辅助功能 ====================
 
   /**
-   * 模拟浏览行为
+   * 模拟浏览行为（增强随机性）
    */
   async simulateBrowsing(durationMs: number = 5000): Promise<void> {
     const human = this.page.getHuman();
-    await human.randomScroll(durationMs);
-    if (Math.random() > 0.5) {
+
+    // 随机决定浏览时长（在给定范围的 70%-130% 之间波动）
+    const actualDuration = durationMs * (0.7 + Math.random() * 0.6);
+
+    // 随机选择浏览模式
+    const browseMode = Math.random();
+
+    if (browseMode < 0.4) {
+      // 40% 概率：随机滚动
+      await human.randomScroll(actualDuration);
+    } else if (browseMode < 0.7) {
+      // 30% 概率：多次小幅滚动
+      const scrollTimes = 2 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < scrollTimes; i++) {
+        await human.humanScroll('down', 100 + Math.random() * 300);
+        await sleep(RandomDelay.scrollDelay());
+      }
+    } else {
+      // 30% 概率：混合滚动 + 鼠标移动
+      await human.randomScroll(actualDuration * 0.6);
       await human.randomMouseMove();
+      await human.randomScroll(actualDuration * 0.4);
+    }
+
+    // 随机决定是否移动鼠标
+    if (Math.random() > 0.4) {
+      await human.randomMouseMove();
+    }
+
+    // 随机决定是否有额外的"停顿思考"
+    if (Math.random() < 0.2) {
+      await sleep(RandomDelay.thinkTime());
     }
   }
 
   /**
-   * 滚动加载更多
+   * 滚动加载更多（增强随机性）
    */
   async loadMore(times: number = 3): Promise<void> {
-    for (let i = 0; i < times; i++) {
-      await this.page.getHuman().humanScroll('down', 300 + Math.random() * 200);
-      await sleep(1000 + Math.random() * 1000);
+    // 随机增加滚动次数（0-2次额外滚动）
+    const actualTimes = times + Math.floor(Math.random() * 3);
+
+    for (let i = 0; i < actualTimes; i++) {
+      // 随机滚动距离
+      const scrollDistance = 200 + Math.random() * 400;
+      await this.page.getHuman().humanScroll('down', scrollDistance);
+
+      // 随机等待时间
+      await sleep(RandomDelay.humanWait(800));
+
+      // 偶尔"停顿"更久
+      if (Math.random() < 0.15) {
+        await sleep(RandomDelay.thinkTime());
+      }
     }
   }
 

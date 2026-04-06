@@ -5,7 +5,7 @@
  */
 
 import * as client from '../daemon/client.js';
-import { sleep } from '../stealth/random-delay.js';
+import { sleep, RandomDelay, randomSleep } from '../stealth/random-delay.js';
 
 export interface ElementInfo {
   ref: string;
@@ -50,8 +50,8 @@ export class BridgePage {
     const result = await client.navigate(url, this.activeTabId || undefined);
     this.activeTabId = result.tabId;
 
-    // 等待页面稳定
-    await sleep(1000);
+    // 随机等待页面稳定，模拟真人浏览
+    await randomSleep(800, 2500);
 
     return result.url;
   }
@@ -72,6 +72,9 @@ export class BridgePage {
     title: string;
     elements: ElementInfo[];
   }> {
+    // 获取状态前的随机延迟
+    await randomSleep(50, 150);
+
     const result = await client.exec(`
       (() => {
         const url = location.href;
@@ -143,6 +146,9 @@ export class BridgePage {
    * 点击元素（使用 CSS 选择器）
    */
   async click(ref: string): Promise<void> {
+    // 点击前的思考时间，模拟真人行为
+    await randomSleep(RandomDelay.thinkTime(), RandomDelay.thinkTime() + 200);
+
     await client.exec(`
       (() => {
         const el = document.querySelector(${JSON.stringify(ref)});
@@ -151,12 +157,18 @@ export class BridgePage {
         el.click();
       })()
     `);
+
+    // 点击后的操作间隔
+    await randomSleep(RandomDelay.actionInterval(), RandomDelay.actionInterval() + 300);
   }
 
   /**
    * 输入文本
    */
   async type(ref: string, text: string): Promise<void> {
+    // 输入前的操作间隔
+    await randomSleep(RandomDelay.actionInterval(), RandomDelay.actionInterval() + 200);
+
     await client.exec(`
       (() => {
         const el = document.querySelector(${JSON.stringify(ref)});
@@ -180,12 +192,17 @@ export class BridgePage {
         }
       })()
     `);
+
+    // 输入后的短暂延迟
+    await randomSleep(100, 300);
   }
 
   /**
    * 执行 JavaScript
    */
   async evaluate<R>(code: string): Promise<R> {
+    // 执行前添加随机延迟，模拟真人操作节奏
+    await randomSleep(50, 200);
     return await client.exec(code, this.activeTabId || undefined);
   }
 
@@ -193,7 +210,11 @@ export class BridgePage {
    * 滚动
    */
   async scroll(direction: 'up' | 'down', amount: number = 300): Promise<void> {
+    // 滚动前的随机延迟
+    await randomSleep(RandomDelay.scrollDelay(), RandomDelay.scrollDelay() + 100);
     await client.scroll(direction, amount);
+    // 滚动后的短暂停顿
+    await randomSleep(100, 300);
   }
 
   /**
@@ -213,10 +234,19 @@ export class BridgePage {
   }
 
   /**
-   * 等待
+   * 等待（自动添加随机性，避免固定等待时间被检测）
+   * @param seconds - 基础等待秒数
+   * @param randomize - 是否添加随机性（默认 true）
    */
-  async wait(seconds: number): Promise<void> {
-    await sleep(seconds * 1000);
+  async wait(seconds: number, randomize: boolean = true): Promise<void> {
+    if (randomize) {
+      // 添加 ±30% 的随机波动
+      const variance = seconds * 0.3;
+      const actualSeconds = seconds + (Math.random() - 0.5) * 2 * variance;
+      await sleep(Math.max(100, actualSeconds * 1000));
+    } else {
+      await sleep(seconds * 1000);
+    }
   }
 
   /**

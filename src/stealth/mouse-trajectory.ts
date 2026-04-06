@@ -12,9 +12,11 @@ export class MouseTrajectory {
    * 生成贝塞尔曲线轨迹点
    * @param start 起点
    * @param end 终点
-   * @param steps 步数（越大越平滑但越慢）
+   * @param steps 步数（越大越平滑但越慢，默认随机15-25）
    */
-  static generateBezierPath(start: Point, end: Point, steps: number = 20): Point[] {
+  static generateBezierPath(start: Point, end: Point, steps?: number): Point[] {
+    // 默认步数随机化，避免固定模式
+    const actualSteps = steps ?? (15 + Math.floor(Math.random() * 11));
     // 随机生成两个控制点，使轨迹更自然
     const controlPoint1: Point = {
       x: start.x + (end.x - start.x) * (0.2 + Math.random() * 0.3) + (Math.random() - 0.5) * 100,
@@ -28,12 +30,12 @@ export class MouseTrajectory {
 
     const points: Point[] = [];
 
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
+    for (let i = 0; i <= actualSteps; i++) {
+      const t = i / actualSteps;
       const point = this.cubicBezier(t, start, controlPoint1, controlPoint2, end);
 
       // 添加轻微随机抖动
-      if (i > 0 && i < steps) {
+      if (i > 0 && i < actualSteps) {
         point.x += (Math.random() - 0.5) * 2;
         point.y += (Math.random() - 0.5) * 2;
       }
@@ -69,13 +71,16 @@ export class MouseTrajectory {
   /**
    * 生成带时间戳的轨迹
    * 用于模拟真实鼠标移动速度变化
+   * @param durationMs 持续时间（默认随机200-400ms）
    */
   static generateTimedPath(
     start: Point,
     end: Point,
-    durationMs: number = 300
+    durationMs?: number
   ): Array<{ point: Point; delayMs: number }> {
-    const steps = Math.max(10, Math.floor(durationMs / 15));
+    // 默认持续时间随机化，避免固定模式
+    const actualDuration = durationMs ?? (200 + Math.random() * 200);
+    const steps = Math.max(10, Math.floor(actualDuration / 15));
     const points = this.generateBezierPath(start, end, steps);
 
     // 模拟真人移动速度：开始慢、中间快、结束慢
@@ -86,9 +91,9 @@ export class MouseTrajectory {
       const progress = i / (points.length - 1);
       const speedFactor = Math.sin(progress * Math.PI); // 中间最快
 
-      // 基础延迟 10-30ms，根据速度调整
-      const baseDelay = 10 + (1 - speedFactor) * 20;
-      const randomDelay = Math.random() * 5;
+      // 基础延迟 8-35ms，根据速度调整（范围更宽更自然）
+      const baseDelay = 8 + (1 - speedFactor) * 27;
+      const randomDelay = Math.random() * 6;
 
       result.push({
         point: points[i],
@@ -101,12 +106,15 @@ export class MouseTrajectory {
 
   /**
    * 生成随机曲线轨迹（用于页面滚动等）
+   * @param randomness 随机程度（默认随机0.2-0.5）
    */
   static generateRandomCurve(
     start: Point,
     end: Point,
-    randomness: number = 0.3
+    randomness?: number
   ): Point[] {
+    // 默认随机程度随机化
+    const actualRandomness = randomness ?? (0.2 + Math.random() * 0.3);
     const points: Point[] = [];
     const steps = 15 + Math.floor(Math.random() * 10);
 
@@ -118,7 +126,7 @@ export class MouseTrajectory {
       let y = start.y + (end.y - start.y) * t;
 
       // 添加正弦波动
-      const wave = Math.sin(t * Math.PI * 2) * randomness * (end.x - start.x) * 0.1;
+      const wave = Math.sin(t * Math.PI * 2) * actualRandomness * (end.x - start.x) * 0.1;
       y += wave;
 
       // 添加随机抖动

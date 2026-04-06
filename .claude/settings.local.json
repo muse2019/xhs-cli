@@ -10,7 +10,32 @@
       "Bash(xhs daemon:*)",
       "Bash(xhs operate:*)",
       "Bash(xhs human:*)",
-      "Bash(xhs xiaohongshu:*)"
+      "Bash(xhs xiaohongshu:*)",
+      "Bash(npm install:*)",
+      "Bash(node dist/index.js --help)",
+      "Bash(node -e \"try { require\\('fs'\\).readFileSync\\('background.js', 'utf8'\\); new Function\\(require\\('fs'\\).readFileSync\\('background.js', 'utf8'\\)\\); console.log\\('background.js: OK'\\); } catch\\(e\\) { console.log\\('background.js ERROR:', e.message\\); }\")",
+      "Bash(node -e \"try { new Function\\(require\\('fs'\\).readFileSync\\('content.js', 'utf8'\\)\\); console.log\\('content.js: OK'\\); } catch\\(e\\) { console.log\\('content.js ERROR:', e.message\\); }\")",
+      "Bash(node -e \"try { new Function\\(require\\('fs'\\).readFileSync\\('stealth.js', 'utf8'\\)\\); console.log\\('stealth.js: OK'\\); } catch\\(e\\) { console.log\\('stealth.js ERROR:', e.message\\); }\")",
+      "Bash(npm test:*)",
+      "Bash(node dist/daemon/index.js)",
+      "Bash(curl -s http://localhost:19826/status)",
+      "Bash(node -e ':*)",
+      "Read(//c/新建文件夹 \\(2\\)/xiaohongshu-cli/**)",
+      "Bash(wc -l src/stealth/*.ts)",
+      "Bash(node dist/index.js --version)",
+      "Bash(node dist/index.js xiaohongshu feed --limit 5)",
+      "Bash(node dist/index.js xiaohongshu view 1)",
+      "Bash(node dist/index.js xiaohongshu refresh)",
+      "Bash(node dist/index.js xiaohongshu view 3)",
+      "Bash(node dist/index.js xiaohongshu collect)",
+      "Bash(node dist/index.js xiaohongshu browse --duration 5000)",
+      "Bash(node dist/index.js xiaohongshu back)",
+      "Bash(node dist/index.js xiaohongshu search \"AI编程\" --limit 10)",
+      "Bash(node dist/index.js xiaohongshu login)",
+      "Bash(node dist/index.js xiaohongshu view 7)",
+      "Bash(node dist/index.js xiaohongshu like)",
+      "Bash(node dist/index.js xiaohongshu comment \"发型真好看！\")",
+      "Bash(gh auth:*)"
     ]
   }
 }

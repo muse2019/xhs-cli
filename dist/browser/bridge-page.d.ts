@@ -61,9 +61,11 @@ export declare class BridgePage {
         path?: string;
     }): Promise<string>;
     /**
-     * 等待
+     * 等待（自动添加随机性，避免固定等待时间被检测）
+     * @param seconds - 基础等待秒数
+     * @param randomize - 是否添加随机性（默认 true）
      */
-    wait(seconds: number): Promise<void>;
+    wait(seconds: number, randomize?: boolean): Promise<void>;
     /**
      * 获取 Cookie
      */

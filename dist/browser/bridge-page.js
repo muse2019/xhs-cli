@@ -4,7 +4,7 @@
  * 复用已登录的 Chrome，不需要重新登录
  */
 import * as client from '../daemon/client.js';
-import { sleep } from '../stealth/random-delay.js';
+import { sleep, RandomDelay, randomSleep } from '../stealth/random-delay.js';
 /**
  * Bridge Page - 通过 Chrome Extension 操作浏览器
  */
@@ -35,8 +35,8 @@ export class BridgePage {
     async goto(url) {
         const result = await client.navigate(url, this.activeTabId || undefined);
         this.activeTabId = result.tabId;
-        // 等待页面稳定
-        await sleep(1000);
+        // 随机等待页面稳定，模拟真人浏览
+        await randomSleep(800, 2500);
         return result.url;
     }
     /**
@@ -50,6 +50,8 @@ export class BridgePage {
      * 获取页面状态（不修改 DOM）
      */
     async getState() {
+        // 获取状态前的随机延迟
+        await randomSleep(50, 150);
         const result = await client.exec(`
       (() => {
         const url = location.href;
@@ -118,6 +120,8 @@ export class BridgePage {
      * 点击元素（使用 CSS 选择器）
      */
     async click(ref) {
+        // 点击前的思考时间，模拟真人行为
+        await randomSleep(RandomDelay.thinkTime(), RandomDelay.thinkTime() + 200);
         await client.exec(`
       (() => {
         const el = document.querySelector(${JSON.stringify(ref)});
@@ -126,11 +130,15 @@ export class BridgePage {
         el.click();
       })()
     `);
+        // 点击后的操作间隔
+        await randomSleep(RandomDelay.actionInterval(), RandomDelay.actionInterval() + 300);
     }
     /**
      * 输入文本
      */
     async type(ref, text) {
+        // 输入前的操作间隔
+        await randomSleep(RandomDelay.actionInterval(), RandomDelay.actionInterval() + 200);
         await client.exec(`
       (() => {
         const el = document.querySelector(${JSON.stringify(ref)});
@@ -154,18 +162,26 @@ export class BridgePage {
         }
       })()
     `);
+        // 输入后的短暂延迟
+        await randomSleep(100, 300);
     }
     /**
      * 执行 JavaScript
      */
     async evaluate(code) {
+        // 执行前添加随机延迟，模拟真人操作节奏
+        await randomSleep(50, 200);
         return await client.exec(code, this.activeTabId || undefined);
     }
     /**
      * 滚动
      */
     async scroll(direction, amount = 300) {
+        // 滚动前的随机延迟
+        await randomSleep(RandomDelay.scrollDelay(), RandomDelay.scrollDelay() + 100);
         await client.scroll(direction, amount);
+        // 滚动后的短暂停顿
+        await randomSleep(100, 300);
     }
     /**
      * 截图
@@ -181,10 +197,20 @@ export class BridgePage {
         return dataUrl;
     }
     /**
-     * 等待
+     * 等待（自动添加随机性，避免固定等待时间被检测）
+     * @param seconds - 基础等待秒数
+     * @param randomize - 是否添加随机性（默认 true）
      */
-    async wait(seconds) {
-        await sleep(seconds * 1000);
+    async wait(seconds, randomize = true) {
+        if (randomize) {
+            // 添加 ±30% 的随机波动
+            const variance = seconds * 0.3;
+            const actualSeconds = seconds + (Math.random() - 0.5) * 2 * variance;
+            await sleep(Math.max(100, actualSeconds * 1000));
+        }
+        else {
+            await sleep(seconds * 1000);
+        }
     }
     /**
      * 获取 Cookie

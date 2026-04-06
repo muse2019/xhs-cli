@@ -45,6 +45,56 @@ export declare class RandomDelay {
     static batchInterval(index: number, total: number): number;
 }
 /**
+ * 请求冷却器 - 防止请求过于频繁被检测
+ */
+export declare class RequestCooldown {
+    private static lastRequestTime;
+    private static requestCount;
+    private static readonly MIN_INTERVAL_MS;
+    private static readonly MAX_INTERVAL_MS;
+    private static readonly BURST_THRESHOLD;
+    private static readonly COOLDOWN_MULTIPLIER;
+    /**
+     * 等待冷却后才能继续请求
+     */
+    static waitForCooldown(): Promise<void>;
+    /**
+     * 重置冷却状态（用于新会话）
+     */
+    static reset(): void;
+    /**
+     * 获取当前请求统计
+     */
+    static getStats(): {
+        requestCount: number;
+        lastRequestTime: number;
+    };
+}
+/**
+ * 行为节流器 - 限制单位时间内的操作次数
+ */
+export declare class BehaviorThrottler {
+    private static operationHistory;
+    private static readonly WINDOW_MS;
+    private static readonly MAX_OPERATIONS;
+    /**
+     * 检查是否应该节流
+     */
+    static shouldThrottle(): boolean;
+    /**
+     * 记录一次操作
+     */
+    static recordOperation(): void;
+    /**
+     * 等待直到可以继续操作
+     */
+    static waitIfNeeded(): Promise<void>;
+    /**
+     * 重置
+     */
+    static reset(): void;
+}
+/**
  * 延迟函数
  */
 export declare function sleep(ms: number): Promise<void>;

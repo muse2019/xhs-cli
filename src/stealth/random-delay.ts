@@ -38,8 +38,8 @@ export class RandomDelay {
    * 打字延迟 - 模拟真实打字速度
    */
   static typingDelay(): number {
-    // 50-150ms 每个字符，偶尔更长
-    const base = 50 + Math.random() * 100;
+    // 30-200ms 每个字符，偶尔更长
+    const base = 30 + Math.random() * 170;
     // 5% 概率停顿
     if (Math.random() < 0.05) {
       return base + 200 + Math.random() * 300;
@@ -110,6 +110,116 @@ export class RandomDelay {
     }
 
     return delay;
+  }
+}
+
+/**
+ * 请求冷却器 - 防止请求过于频繁被检测
+ */
+export class RequestCooldown {
+  private static lastRequestTime: number = 0;
+  private static requestCount: number = 0;
+  private static readonly MIN_INTERVAL_MS = 800;  // 最小请求间隔
+  private static readonly MAX_INTERVAL_MS = 3000; // 最大请求间隔
+  private static readonly BURST_THRESHOLD = 5;    // 突发阈值
+  private static readonly COOLDOWN_MULTIPLIER = 2; // 冷却倍数
+
+  /**
+   * 等待冷却后才能继续请求
+   */
+  static async waitForCooldown(): Promise<void> {
+    const now = Date.now();
+    const elapsed = now - this.lastRequestTime;
+
+    // 计算需要等待的时间
+    let requiredDelay = this.MIN_INTERVAL_MS + Math.random() * (this.MAX_INTERVAL_MS - this.MIN_INTERVAL_MS);
+
+    // 如果请求次数超过阈值，增加冷却时间
+    if (this.requestCount >= this.BURST_THRESHOLD) {
+      requiredDelay *= this.COOLDOWN_MULTIPLIER;
+      // 随机重置计数器
+      if (Math.random() < 0.3) {
+        this.requestCount = 0;
+      }
+    }
+
+    // 如果距离上次请求时间不足，等待剩余时间
+    if (elapsed < requiredDelay) {
+      const waitTime = requiredDelay - elapsed + Math.random() * 200;
+      await sleep(waitTime);
+    }
+
+    this.lastRequestTime = Date.now();
+    this.requestCount++;
+  }
+
+  /**
+   * 重置冷却状态（用于新会话）
+   */
+  static reset(): void {
+    this.lastRequestTime = 0;
+    this.requestCount = 0;
+  }
+
+  /**
+   * 获取当前请求统计
+   */
+  static getStats(): { requestCount: number; lastRequestTime: number } {
+    return {
+      requestCount: this.requestCount,
+      lastRequestTime: this.lastRequestTime,
+    };
+  }
+}
+
+/**
+ * 行为节流器 - 限制单位时间内的操作次数
+ */
+export class BehaviorThrottler {
+  private static operationHistory: number[] = [];
+  private static readonly WINDOW_MS = 60000; // 1分钟窗口
+  private static readonly MAX_OPERATIONS = 30; // 每分钟最大操作数
+
+  /**
+   * 检查是否应该节流
+   */
+  static shouldThrottle(): boolean {
+    const now = Date.now();
+
+    // 清理过期记录
+    this.operationHistory = this.operationHistory.filter(t => now - t < this.WINDOW_MS);
+
+    return this.operationHistory.length >= this.MAX_OPERATIONS;
+  }
+
+  /**
+   * 记录一次操作
+   */
+  static recordOperation(): void {
+    this.operationHistory.push(Date.now());
+  }
+
+  /**
+   * 等待直到可以继续操作
+   */
+  static async waitIfNeeded(): Promise<void> {
+    if (this.shouldThrottle()) {
+      // 计算需要等待的时间
+      const oldestOp = this.operationHistory[0];
+      const waitTime = this.WINDOW_MS - (Date.now() - oldestOp) + Math.random() * 5000;
+
+      if (waitTime > 0) {
+        await sleep(waitTime);
+      }
+    }
+    this.recordOperation();
+  }
+
+  /**
+   * 重置
+   */
+  static reset(): void {
+    this.operationHistory = [];
   }
 }
 

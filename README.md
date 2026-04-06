@@ -2,17 +2,19 @@
 
 **复用已登录的 Chrome，无需重新登录！**
 
-类似 opencli 的架构：Chrome Extension + Daemon + CLI，直接操作你已经登录的浏览器。
+基于 Chrome Extension + Daemon + CLI 架构，直接操作你已经登录的浏览器，配合 56 层反检测保护和真人行为模拟，安全稳定。
 
-## 特性
+## ✨ 特性
 
-- ✅ **复用已登录 Chrome** - 无需重新登录
-- ✅ **真人行为模拟** - 贝塞尔曲线鼠标轨迹、随机延迟、打字模拟、失误纠正
-- ✅ **反检测** - 23 层保护，包括 WebRTC、Font、Canvas、Audio 指纹保护
-- ✅ **Touch 事件支持** - 支持移动端/响应式网站
-- ✅ **行为噪声** - 自适应延迟、随机微操作，防止机器学习检测
+- 🔄 **复用已登录 Chrome** - 无需重新登录，直接使用已登录的浏览器
+- 🖱️ **真人行为模拟** - 贝塞尔曲线鼠标轨迹、高斯分布延迟、打字模拟、失误纠正
+- 🛡️ **56 层反检测** - WebRTC、Font、Canvas、Audio、WebGL 指纹保护
+- 📱 **Touch 事件支持** - 支持移动端/响应式网站
+- 🔐 **隐蔽状态存储** - WeakMap + Symbol，避免全局变量被检测
+- ⚡ **行为噪声** - 自适应延迟、随机微操作，防止机器学习检测
+- 🎯 **事件完整性** - movementX/Y、sourceCapabilities、InputDeviceCapabilities
 
-## 架构
+## 📐 架构
 
 ```
 ┌─────────────┐     HTTP      ┌─────────────┐     消息     ┌─────────────┐
@@ -26,11 +28,12 @@
                                                         └─────────────┘
 ```
 
-## 快速开始
+## 🚀 快速开始
 
 ### 1. 安装
 
 ```bash
+git clone https://github.com/your-username/xiaohongshu-cli.git
 cd xiaohongshu-cli
 npm install
 npm run build
@@ -61,25 +64,28 @@ xhs daemon status
 # 检查登录状态
 xhs xiaohongshu login
 
-# 搜索
-xhs xiaohongshu search "美食推荐"
+# 获取首页 Feed
+xhs xiaohongshu feed --limit 20
+
+# 查看笔记详情
+xhs xiaohongshu view 1
 
 # 点赞（真人行为模拟）
-xhs xiaohongshu like 69a8423f000000002202cdee
+xhs xiaohongshu like
 
 # 收藏（真人行为模拟）
-xhs xiaohongshu collect 69a8423f000000002202cdee
+xhs xiaohongshu collect
 
 # 评论（真人行为模拟）
-xhs xiaohongshu comment 69a8423f000000002202cdee "太棒了！"
+xhs xiaohongshu comment "太棒了！"
 
 # 浏览笔记（真人行为模拟）
-xhs xiaohongshu browse 69a8423f000000002202cdee --duration 15000
+xhs xiaohongshu browse --duration 15000
 ```
 
 ---
 
-## 命令列表
+## 📖 命令列表
 
 ### Daemon 管理
 
@@ -127,46 +133,47 @@ xhs xiaohongshu browse 69a8423f000000002202cdee --duration 15000
 | 命令 | 说明 |
 |------|------|
 | `xhs xiaohongshu login` | 检查登录状态 |
+| `xhs xiaohongshu feed` | 获取首页 Feed |
+| `xhs xiaohongshu view <num>` | 查看指定编号笔记 |
 | `xhs xiaohongshu search <keyword>` | 搜索笔记 |
 | `xhs xiaohongshu note <id>` | 查看笔记详情 |
-| `xhs xiaohongshu like <id>` | 点赞（真人行为） |
-| `xhs xiaohongshu collect <id>` | 收藏（真人行为） |
-| `xhs xiaohongshu comment <id> <text>` | 评论（真人行为） |
-| `xhs xiaohongshu browse <id>` | 浏览笔记（真人行为） |
+| `xhs xiaohongshu like [id]` | 点赞（真人行为） |
+| `xhs xiaohongshu collect [id]` | 收藏（真人行为） |
+| `xhs xiaohongshu comment [id] <text>` | 评论（真人行为） |
+| `xhs xiaohongshu browse [id]` | 浏览笔记（真人行为） |
+| `xhs xiaohongshu back` | 返回列表 |
+| `xhs xiaohongshu refresh` | 刷新页面 |
 
 ---
 
-## 反检测保护
+## 🛡️ 反检测保护
 
-### 23 层保护机制
+### 56 层防护机制
 
-| 层级 | 功能 |
+| 分类 | 功能 |
 |------|------|
-| 1-14 | 基础保护（webdriver 伪装、CDP 痕迹清理等） |
-| 15 | Canvas 指纹噪声 |
-| 16 | Audio 指纹噪声 |
-| 17 | DevTools 检测防护 |
-| 18 | 时间戳指纹随机化 |
-| 19 | WebRTC IP 泄露保护 |
-| 20 | Font 指纹保护 |
-| 21 | 屏幕信息伪装 |
-| 22 | 硬件信息伪装 |
-| 23 | Touch 支持伪装 |
+| **基础伪装** | navigator.webdriver、window.chrome、navigator.plugins、languages |
+| **痕迹清理** | CDP 堆栈清理、debugger 过滤、console 方法伪装 |
+| **指纹保护** | Canvas、Audio、WebGL、Font、Screen、Hardware |
+| **网络保护** | WebRTC IP 保护、User-Agent Client Hints、Fetch 伪装 |
+| **API 伪装** | Touch、Battery、SpeechSynthesis、Gamepad、USB、Bluetooth、Serial |
+| **事件伪装** | InputDeviceCapabilities、sourceCapabilities、movementX/Y、Event.timeStamp |
+| **高级防护** | Math.random 增强、错误堆栈清理、CSS 指纹噪声、PerformanceTiming |
 
-### 指纹保护
+### 指纹保护详情
 
 | 类型 | 说明 |
 |------|------|
 | **Canvas** | getImageData 添加微弱噪声 |
 | **Audio** | getFloatFrequencyData 随机化 |
-| **WebGL** | 统一显卡指纹 |
+| **WebGL** | GPU 指纹池化（Intel/NVIDIA/AMD） |
 | **Font** | 随机化字体测量结果 |
-| **Screen** | 伪装常见分辨率 |
-| **Hardware** | CPU 核心数、内存、电池状态 |
+| **Screen** | 多种常见分辨率伪装 |
+| **Hardware** | CPU 核心数、内存、电池状态伪装 |
 
 ---
 
-## 真人行为模拟
+## 🖱️ 真人行为模拟
 
 ### 实现位置
 
@@ -176,29 +183,31 @@ xhs xiaohongshu browse 69a8423f000000002202cdee --duration 15000
 extension/
 ├── manifest.json     # 扩展配置
 ├── background.js     # Service Worker
-├── stealth.js        # 反检测脚本
-└── content.js        # 真人行为模拟 ⭐
+├── stealth.js        # 反检测脚本 (56 层)
+└── content.js        # 真人行为模拟
 ```
 
 ### 功能列表
 
 | 功能 | 说明 |
 |------|------|
-| **鼠标轨迹** | 贝塞尔曲线 + 随机抖动 + 失误纠正 |
+| **鼠标轨迹** | 贝塞尔曲线 + 随机抖动 + 失误纠正 + 高频微颤 |
 | **点击模拟** | PointerEvent + TouchEvent 完整事件序列 |
 | **打字模拟** | keydown → keypress → input → keyup + 随机延迟 + 打错字模拟 |
 | **滚动模拟** | 分段滚动 + 随机速度 + 偶尔回头 |
-| **思考时间** | 随机延迟模拟人类思考 |
+| **思考时间** | 高斯分布延迟模拟人类思考 |
 | **阅读时间** | 根据文字长度计算阅读时间 |
-| **行为噪声** | 自适应延迟、随机微操作 |
+| **行为噪声** | 自适应延迟、随机微操作、动态阈值 |
 
-### 行为噪声
+### 行为噪声机制
 
 为防止机器学习检测操作模式，实现了以下噪声机制：
 
 - **自适应延迟**: 操作太频繁时自动增加延迟
 - **随机微操作**: 5% 概率在操作间插入无意义动作
-- **频率控制**: 每分钟操作超过 30 次时自动降速
+- **频率控制**: 每分钟操作超过阈值时自动降速
+- **疲劳模拟**: 长时间操作后速度变慢
+- **动态参数**: 噪声参数每 30-90 秒自动更新
 
 ### 鼠标轨迹算法
 
@@ -213,34 +222,32 @@ function generateBezierPoints(start, end, steps) {
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const point = cubicBezier(t, start, cp1, cp2, end);
-    // 添加随机抖动
-    point.x += random(-2, 2);
-    point.y += random(-2, 2);
+    // 添加随机抖动 + 高频微颤
+    point.x += random(-2, 2) + Math.sin(i * 0.8) * random(0.5, 2);
+    point.y += random(-2, 2) + Math.cos(i * 0.6) * random(0.5, 2);
   }
+}
+```
+
+### 隐蔽状态存储
+
+使用 WeakMap + Symbol 实现隐蔽的状态存储，避免全局变量被检测：
+
+```javascript
+const _stateKey = Symbol.for('_xhs_' + Math.random().toString(36).slice(2, 10));
+const _stateStore = new WeakMap();
+
+function getState() {
+  if (!_stateStore.has(window)) {
+    _stateStore.set(window, { /* 状态 */ });
+  }
+  return _stateStore.get(window);
 }
 ```
 
 ---
 
-## 与 opencli 对比
-
-| 特性 | opencli | xhs-cli |
-|------|---------|---------|
-| 复用已登录 Chrome | ✅ | ✅ |
-| 无需重新登录 | ✅ | ✅ |
-| 真人行为模拟 | ❌ | ✅ |
-| 鼠标轨迹 | ❌ | ✅ 贝塞尔曲线 |
-| 随机延迟 | ❌ | ✅ |
-| 打字模拟 | ❌ | ✅ |
-| Touch 事件 | ❌ | ✅ |
-| 反检测 | ✅ 13层 | ✅ 23层 |
-| WebRTC 保护 | ❌ | ✅ |
-| Font 指纹保护 | ❌ | ✅ |
-| 行为噪声 | ❌ | ✅ |
-
----
-
-## 常见问题
+## ❓ 常见问题
 
 ### Extension 未连接
 
@@ -281,26 +288,49 @@ Element not found
 
 ---
 
-## 项目结构
+## 📁 项目结构
 
 ```
 xiaohongshu-cli/
 ├── extension/                    # Chrome 扩展
 │   ├── manifest.json            # 扩展配置
 │   ├── background.js            # Service Worker
-│   ├── stealth.js               # 反检测脚本
+│   ├── stealth.js               # 反检测脚本 (56 层)
 │   └── content.js               # 真人行为模拟
 ├── src/
 │   ├── daemon/                   # Daemon 服务
 │   │   ├── index.ts             # HTTP 服务器
 │   │   └── client.ts            # 客户端库
 │   ├── browser/
+│   │   ├── page.ts              # Playwright 页面封装
 │   │   └── bridge-page.ts       # 通过 Daemon 操作浏览器
 │   ├── stealth/                  # 反检测模块
+│   │   ├── stealth-script.ts    # 反检测脚本生成
+│   │   ├── human-behavior.ts    # 真人行为模拟
+│   │   ├── mouse-trajectory.ts  # 鼠标轨迹算法
+│   │   └── random-delay.ts      # 随机延迟 + 冷却器
+│   ├── adapters/
+│   │   └── xiaohongshu.ts       # 小红书专用功能
 │   └── index.ts                 # CLI 入口
+├── dist/                         # 编译输出
 └── package.json
 ```
 
-## License
+## 📊 代码统计
+
+| 模块 | 行数 | 大小 |
+|------|------|------|
+| stealth.js (反检测) | 1,450 行 | 46 KB |
+| content.js (行为模拟) | 1,352 行 | 37 KB |
+| TypeScript 核心模块 | 1,591 行 | - |
+| **总计** | **~4,400 行** | **~83 KB** |
+
+## 📄 License
 
 MIT
+
+---
+
+<p align="center">
+  <b>⭐ 如果这个项目对你有帮助，请给一个 Star！</b>
+</p>

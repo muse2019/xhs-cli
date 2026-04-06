@@ -112,8 +112,13 @@ export class Page {
     // 普通模式
     const browser = await chromium.launch(launchOptions);
 
+    // 生成动态 User-Agent，使用当前主流 Chrome 版本
+    const chromeVersions = ['122.0.0.0', '123.0.0.0', '124.0.0.0', '125.0.0.0'];
+    const randomVersion = chromeVersions[Math.floor(Math.random() * chromeVersions.length)];
+    const defaultUA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${randomVersion} Safari/537.36`;
+
     const contextOptions: any = {
-      userAgent: options.userAgent ?? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      userAgent: options.userAgent ?? defaultUA,
       viewport: options.viewport ?? { width: 1920, height: 1080 },
       locale: 'zh-CN',
       timezoneId: 'Asia/Shanghai',
@@ -157,10 +162,11 @@ export class Page {
     // 注入元素引用
     await this.injectElementRefs();
 
-    // 更新鼠标位置
+    // 更新鼠标位置 - 使用随机化初始位置，避免固定 (0,0) 被检测
+    const viewportSize = this.page.viewportSize() || { width: 1920, height: 1080 };
     this.human.updateLastPosition(
-      Math.floor(Math.random() * 500),
-      Math.floor(Math.random() * 500)
+      Math.floor(Math.random() * viewportSize.width * 0.5),
+      Math.floor(Math.random() * viewportSize.height * 0.5)
     );
   }
 
@@ -168,7 +174,8 @@ export class Page {
    * 等待 DOM 稳定
    */
   private async waitForDomStable(): Promise<void> {
-    await sleep(500);
+    // 随机等待 300-800ms，避免固定时间被检测
+    await sleep(300 + Math.random() * 500);
     await this.page.waitForLoadState('domcontentloaded');
   }
 

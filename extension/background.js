@@ -93,12 +93,30 @@ async function setCdpMode(enabled) {
 // ==================== CDP 输入事件 ====================
 
 /**
- * 添加小数坐标，模拟真实鼠标位置
+ * 生成更自然的小数部分，避免固定模式被检测
+ * - 使用多层次的随机性
+ * - 小数位数不固定
+ * - 避免均匀分布，使用更接近真实鼠标的自然分布
  */
 function addFloatJitter(value, maxJitter = 0.5) {
-  const decimal = Math.random() * 0.99 + 0.01;
-  const jitter = (Math.random() - 0.5) * maxJitter;
-  return value + decimal + jitter;
+  // 使用混合随机源，避免单一 Math.random() 模式
+  const rand1 = Math.random();
+  const rand2 = Math.random();
+
+  // 生成小数部分：使用正态分布模拟真实鼠标位置偏好
+  // Box-Muller 变换生成近似正态分布
+  const normalRandom = Math.sqrt(-2 * Math.log(rand1 || 0.0001)) * Math.cos(2 * Math.PI * rand2);
+  // 将正态分布映射到 0-1 范围，并偏向某些值
+  const decimal = 0.1 + Math.abs(normalRandom) * 0.4 + Math.random() * 0.3;
+
+  // 抖动也使用更自然的分布
+  const jitterMagnitude = maxJitter * (0.3 + Math.random() * 0.7);
+  const jitter = (Math.random() - 0.5) * jitterMagnitude;
+
+  // 偶尔添加微小的额外偏移（模拟手抖）
+  const microJitter = (Math.random() < 0.3) ? (Math.random() - 0.5) * 0.1 : 0;
+
+  return value + decimal + jitter + microJitter;
 }
 
 /**
@@ -198,9 +216,9 @@ async function cdpClick(tabId, x, y) {
   if (!await ensureDebuggerAttached(tabId)) return false;
 
   await cdpMouseMove(tabId, x, y);
-  await new Promise(r => setTimeout(r, 50 + Math.random() * 50));
+  await naturalDelay(40, 80); // 更自然的悬停延迟
   await cdpMouseDown(tabId, x, y);
-  await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+  await naturalDelay(50, 120); // 按压延迟
   await cdpMouseUp(tabId, x, y);
   return true;
 }
@@ -233,9 +251,9 @@ async function cdpKeyUp(tabId, key) {
 async function cdpType(tabId, text) {
   for (const char of text) {
     await cdpKeyDown(tabId, char, char);
-    await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+    await naturalDelay(40, 100);
     await cdpKeyUp(tabId, char);
-    await new Promise(r => setTimeout(r, 30 + Math.random() * 70));
+    await naturalDelay(20, 90);
   }
 }
 
@@ -356,8 +374,8 @@ async function cdpHumanClick(tabId, x, y) {
   // 移动到目标位置（带轨迹）
   await cdpHumanMouseMove(tabId, x, y);
 
-  // 悬停延迟
-  await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+  // 悬停延迟（更自然的范围）
+  await naturalDelay(40, 150);
 
   // 按下
   const floatX = addFloatJitter(x);
@@ -370,8 +388,8 @@ async function cdpHumanClick(tabId, x, y) {
     clickCount: 1,
   });
 
-  // 按压时间（真人 50-150ms）
-  await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+  // 按压时间（真人 50-150ms，使用自然延迟）
+  await naturalDelay(60, 100);
 
   // 释放
   await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', {
@@ -382,8 +400,8 @@ async function cdpHumanClick(tabId, x, y) {
     clickCount: 1,
   });
 
-  // 点击后延迟
-  await new Promise(r => setTimeout(r, 100 + Math.random() * 200));
+  // 点击后延迟（更宽的范围）
+  await naturalDelay(80, 300);
 
   return true;
 }
@@ -405,23 +423,23 @@ async function cdpHumanType(tabId, text) {
     if (i === typoIndex) {
       const wrongChar = String.fromCharCode(char.charCodeAt(0) + (Math.random() > 0.5 ? 1 : -1));
       await cdpKeyDown(tabId, wrongChar, wrongChar);
-      await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+      await naturalDelay(40, 120);
       await cdpKeyUp(tabId, wrongChar);
-      await new Promise(r => setTimeout(r, 100 + Math.random() * 200)); // 发现错误
+      await naturalDelay(80, 300); // 发现错误
 
       // 删除
       await cdpKeyDown(tabId, 'Backspace');
-      await new Promise(r => setTimeout(r, 50 + Math.random() * 50));
+      await naturalDelay(30, 90);
       await cdpKeyUp(tabId, 'Backspace');
-      await new Promise(r => setTimeout(r, 100 + Math.random() * 100)); // 纠正延迟
+      await naturalDelay(60, 180); // 纠正延迟
     }
 
     await cdpKeyDown(tabId, char, char);
-    await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+    await naturalDelay(40, 120);
     await cdpKeyUp(tabId, char);
 
-    // 随机延迟
-    let delay = 30 + Math.random() * 70;
+    // 随机延迟（使用更自然的分布）
+    let delay = 25 + Math.random() * 85 + (Math.random() < 0.15 ? Math.random() * 30 : 0);
 
     // 5% 概率停顿更久
     if (Math.random() < 0.05) {
@@ -440,10 +458,31 @@ async function cdpHumanType(tabId, text) {
 }
 
 /**
- * 随机延迟
+ * 随机延迟（增强随机性）
  */
 function randomDelay(min, max) {
-  return new Promise(r => setTimeout(r, min + Math.random() * (max - min)));
+  // 基础随机
+  let delay = min + Math.random() * (max - min);
+  // 偶尔添加额外偏移，避免固定模式
+  if (Math.random() < 0.15) {
+    delay += (Math.random() - 0.5) * (max - min) * 0.3;
+  }
+  return new Promise(r => setTimeout(r, Math.max(10, delay)));
+}
+
+/**
+ * 自然随机延迟（避免固定模式）
+ * 使用分段随机和偶尔的长停顿模拟人类行为
+ */
+function naturalDelay(baseMs, varianceMs) {
+  // 基础延迟 + 方差
+  let delay = baseMs + Math.random() * varianceMs;
+  // 偶尔添加额外的随机因子
+  if (Math.random() < 0.2) {
+    delay += (Math.random() - 0.3) * varianceMs * 0.5;
+  }
+  // 确保最小值
+  return new Promise(r => setTimeout(r, Math.max(10, delay)));
 }
 
 /**
@@ -607,6 +646,10 @@ async function pollCommands() {
         executingCommandId = cmd.id;
 
         try {
+          // 命令执行前的思考时间（模拟人类反应时间）
+          const thinkTime = 30 + Math.random() * 100;
+          await new Promise(r => setTimeout(r, thinkTime));
+
           const result = await executeCommand(cmd);
           lastCommandId = cmd.id;
 
@@ -1083,8 +1126,12 @@ function startRandomPolling() {
   pollingStarted = true;
 
   const scheduleNextPoll = () => {
-    // 随机间隔 80-200ms（平均 ~140ms，略高于原来的 100ms）
-    const delay = 80 + Math.random() * 120;
+    // 随机间隔 60-300ms（更宽的范围避免固定模式）
+    // 使用分段随机让分布更自然
+    const baseDelay = 60 + Math.random() * 240;
+    // 偶尔添加额外延迟（模拟网络波动）
+    const extraDelay = (Math.random() < 0.15) ? Math.random() * 50 : 0;
+    const delay = baseDelay + extraDelay;
     setTimeout(async () => {
       if (!connected) {
         await connectDaemon();
