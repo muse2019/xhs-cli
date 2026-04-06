@@ -33,8 +33,8 @@
 ### 1. 安装
 
 ```bash
-git clone https://github.com/your-username/xiaohongshu-cli.git
-cd xiaohongshu-cli
+git clone https://github.com/muse2019/xhs-cli.git
+cd xhs-cli
 npm install
 npm run build
 npm link
