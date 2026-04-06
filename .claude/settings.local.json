@@ -35,7 +35,13 @@
       "Bash(node dist/index.js xiaohongshu view 7)",
       "Bash(node dist/index.js xiaohongshu like)",
       "Bash(node dist/index.js xiaohongshu comment \"发型真好看！\")",
-      "Bash(gh auth:*)"
+      "Bash(gh auth:*)",
+      "Bash(gh repo:*)",
+      "Bash(node scripts/add-agent-mode.js)",
+      "Bash(mv scripts/add-agent-mode.js scripts/add-agent-mode.cjs)",
+      "Bash(node scripts/add-agent-mode.cjs)",
+      "Bash(node dist/index.js xiaohongshu feed --agent --limit 3)",
+      "Bash(node dist/index.js xiaohongshu view 2 --agent)"
     ]
   }
 }

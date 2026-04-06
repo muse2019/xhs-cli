@@ -293,15 +293,41 @@ const xiaohongshu = program
   .alias('xhs')
   .description('小红书专用命令');
 
+// Agent友好的响应格式
+interface AgentResponse {
+  success: boolean;
+  data: any;
+  actions: Array<{
+    name: string;
+    description: string;
+    command: string;
+    params?: Record<string, string>;
+  }>;
+  context?: {
+    currentNoteId?: string;
+    currentNoteIndex?: number;
+    feedCount?: number;
+  };
+}
+
+function outputAgentResponse(response: AgentResponse, isAgent: boolean): void {
+  if (isAgent) {
+    console.log(JSON.stringify(response, null, 2));
+  }
+}
+
 xiaohongshu
   .command('feed')
   .option('--limit <n>', '结果数量', '20')
   .option('--json', '输出 JSON 格式')
+  .option('--agent', '输出 Agent 友好的 JSON 格式')
   .description('获取首页推荐 Feed 流')
-  .action(async (opts: { limit: string; json: boolean }) => {
+  .action(async (opts: { limit: string; json: boolean; agent: boolean }) => {
     const page = await getBridgePage();
 
-    console.log(chalk.dim('获取首页 Feed...'));
+    if (!opts.agent && !opts.json) {
+      console.log(chalk.dim('获取首页 Feed...'));
+    }
     await page.goto('https://www.xiaohongshu.com/explore');
     await page.wait(2);
 
@@ -380,6 +406,30 @@ xiaohongshu
     // 缓存结果到文件，供 view 命令使用
     writeFeedCache(feed);
 
+    // Agent 模式输出
+    if (opts.agent) {
+      const response: AgentResponse = {
+        success: true,
+        data: {
+          feed: feed.map((item, i) => ({
+            index: i + 1,
+            ...item
+          })),
+          count: feed.length,
+        },
+        actions: [
+          { name: 'view', description: '查看笔记详情', command: 'xhs xiaohongshu view <编号>', params: { 编号: '1-' + feed.length } },
+          { name: 'refresh', description: '刷新获取新内容', command: 'xhs xiaohongshu refresh' },
+          { name: 'search', description: '搜索笔记', command: 'xhs xiaohongshu search <关键词>' },
+        ],
+        context: {
+          feedCount: feed.length,
+        },
+      };
+      console.log(JSON.stringify(response, null, 2));
+      return;
+    }
+
     if (opts.json) {
       console.log(JSON.stringify(feed, null, 2));
       return;
@@ -403,18 +453,25 @@ xiaohongshu
 xiaohongshu
   .command('view')
   .argument('<number>', '笔记编号 (从 feed 列表中选择)')
+  .option('--agent', '输出 Agent 友好的 JSON 格式')
   .description('查看指定编号的笔记详情（在当前页面点击打开）')
-  .action(async (num: string) => {
+  .action(async (num: string, opts: { agent: boolean }) => {
     const feedCache = readFeedCache();
     const index = parseInt(num, 10) - 1;
 
     if (index < 0 || index >= feedCache.length) {
-      console.error(chalk.red(`✗ 无效编号: ${num}，请先运行 xhs xiaohongshu feed 获取列表`));
+      if (opts.agent) {
+        console.log(JSON.stringify({ success: false, error: `无效编号: ${num}，请先运行 feed 命令`, actions: [{ name: 'feed', description: '获取笔记列表', command: 'xhs xiaohongshu feed --agent' }] }, null, 2));
+      } else {
+        console.error(chalk.red(`✗ 无效编号: ${num}，请先运行 xhs xiaohongshu feed 获取列表`));
+      }
       return;
     }
 
     const note = feedCache[index];
-    console.log(chalk.dim(`点击笔记 [${num}]: ${note.title.slice(0, 30)}...`));
+    if (!opts.agent) {
+      console.log(chalk.dim(`点击笔记 [${num}]: ${note.title.slice(0, 30)}...`));
+    }
 
     const page = await getBridgePage();
 
@@ -423,7 +480,9 @@ xiaohongshu
     const isOnFeedPage = currentUrl?.includes('xiaohongshu.com/explore') || currentUrl?.includes('xiaohongshu.com/?');
 
     if (!isOnFeedPage) {
-      console.log(chalk.dim('导航到首页...'));
+      if (!opts.agent) {
+        console.log(chalk.dim('导航到首页...'));
+      }
       await page.goto('https://www.xiaohongshu.com/explore');
       await page.wait(3);
     }
@@ -595,7 +654,9 @@ xiaohongshu
     const x = (position as any).x;
     const y = (position as any).y;
 
-    console.log(chalk.dim(`点击坐标: (${x}, ${y})`));
+    if (!opts.agent) {
+      console.log(chalk.dim(`点击坐标: (${x}, ${y})`));
+    }
 
     // 使用真人行为点击
     const clickResult = await daemonClient.humanClick(x, y);
@@ -678,6 +739,43 @@ xiaohongshu
         };
       })()
     `);
+
+    // Agent 模式输出
+    if (opts.agent) {
+      const response: AgentResponse = {
+        success: true,
+        data: {
+          note: {
+            id: note.id,
+            index: parseInt(num, 10),
+            title: (info as any).title || '',
+            author: (info as any).author || '',
+            description: (info as any).desc || '',
+            imageCount: (info as any).imgCount || 0,
+            likes: (info as any).likes || '0',
+            collects: (info as any).collects || '0',
+            isLiked: (info as any).liked || false,
+            isCollected: (info as any).collected || false,
+            url: note.url,
+          },
+        },
+        actions: [
+          ...(info as any).liked ? [] : [{ name: 'like', description: '点赞笔记', command: 'xhs xiaohongshu like' }],
+          ...(info as any).collected ? [] : [{ name: 'collect', description: '收藏笔记', command: 'xhs xiaohongshu collect' }],
+          { name: 'comment', description: '评论笔记', command: 'xhs xiaohongshu comment <内容>' },
+          { name: 'browse', description: '模拟浏览', command: 'xhs xiaohongshu browse --duration 5000' },
+          { name: 'back', description: '返回列表', command: 'xhs xiaohongshu back' },
+        ],
+        context: {
+          currentNoteId: note.id,
+          currentNoteIndex: parseInt(num, 10),
+          feedCount: feedCache.length,
+        },
+      };
+      console.log(JSON.stringify(response, null, 2));
+      return;
+    }
+
 
     console.log(chalk.bold(`\n${(info as any).title || '(无标题)'}`));
     console.log(chalk.dim(`作者: ${(info as any).author || '(未知)'}`));
